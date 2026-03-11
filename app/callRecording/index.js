@@ -12,6 +12,8 @@ class CallRecordingManager {
   #channels;
   #dataSize;
   #currentFilePath;
+  #videoWriteStream;
+  #currentVideoFilePath;
 
   constructor(config) {
     this.#config = config;
@@ -20,6 +22,8 @@ class CallRecordingManager {
     this.#channels = 1;
     this.#dataSize = 0;
     this.#currentFilePath = null;
+    this.#videoWriteStream = null;
+    this.#currentVideoFilePath = null;
 
     const configDir = config?.callRecording?.outputDirectory;
     this.#outputDir = configDir || path.join(app.getPath('documents'), 'TeamsRecordings');
@@ -48,6 +52,21 @@ class CallRecordingManager {
     // Receive recording stop signal
     ipcMain.on('call-recording-stop', () => {
       this.#handleRecordingStop();
+    });
+
+    // Receive video recording start signal with format parameters
+    ipcMain.on('call-video-recording-start', (_event, _params) => {
+      this.#handleVideoRecordingStart();
+    });
+
+    // Receive encoded WebM video+audio chunks from renderer
+    ipcMain.on('call-video-recording-chunk', (_event, data) => {
+      this.#handleVideoChunk(data);
+    });
+
+    // Receive video recording stop signal
+    ipcMain.on('call-video-recording-stop', () => {
+      this.#handleVideoRecordingStop();
     });
 
     console.info(`${LOG_PREFIX} Handlers registered, output directory: ${this.#outputDir}`);
@@ -116,6 +135,53 @@ class CallRecordingManager {
     }
 
     this.#writeStream = null;
+  }
+
+  #handleVideoRecordingStart() {
+    if (this.#videoWriteStream) {
+      this.#handleVideoRecordingStop();
+    }
+
+    const timestamp = new Date().toISOString().replaceAll(/[:.]/g, '-');
+    const filename = `teams-call-${timestamp}.webm`;
+    this.#currentVideoFilePath = path.join(this.#outputDir, filename);
+
+    try {
+      this.#videoWriteStream = fs.createWriteStream(this.#currentVideoFilePath);
+      console.info(`${LOG_PREFIX} Video recording to file: ${filename}`);
+    } catch (error) {
+      console.error(`${LOG_PREFIX} Failed to create video recording file:`, error.message);
+      this.#videoWriteStream = null;
+    }
+  }
+
+  #handleVideoChunk(data) {
+    if (!this.#videoWriteStream) {
+      return;
+    }
+
+    try {
+      const buffer = Buffer.from(data);
+      this.#videoWriteStream.write(buffer);
+    } catch (error) {
+      console.error(`${LOG_PREFIX} Failed to write video chunk:`, error.message);
+    }
+  }
+
+  #handleVideoRecordingStop() {
+    if (!this.#videoWriteStream) {
+      return;
+    }
+
+    try {
+      this.#videoWriteStream.end(() => {
+        console.info(`${LOG_PREFIX} Video recording saved: ${this.#currentVideoFilePath}`);
+      });
+    } catch (error) {
+      console.error(`${LOG_PREFIX} Failed to finalize video recording:`, error.message);
+    }
+
+    this.#videoWriteStream = null;
   }
 
   /**

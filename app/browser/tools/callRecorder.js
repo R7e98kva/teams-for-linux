@@ -5,6 +5,9 @@
  * (incoming) audio during Teams calls. Records to raw PCM and sends chunks
  * to the main process via IPC for WAV file writing.
  *
+ * When mode is "video" or "both", also captures remote video tracks and
+ * uses MediaRecorder to produce WebM (VP8+Opus) sent via IPC.
+ *
  * Activated automatically when a call connects if callRecording.enabled is true.
  */
 
@@ -18,6 +21,11 @@ let mixedDestination = null;
 let scriptProcessor = null;
 let connectedSources = [];
 let sampleRate = 44100;
+
+// Video recording state
+let mediaRecorder = null;
+let remoteVideoTrack = null;
+let combinedStream = null;
 
 /**
  * Initialize the call recorder tool
@@ -35,7 +43,23 @@ function init(cfg, ipcRenderer) {
 
   patchRTCPeerConnection();
   patchGetUserMedia();
-  console.info(`${LOG_PREFIX} Initialized - auto-recording enabled`);
+  console.info(`${LOG_PREFIX} Initialized - auto-recording enabled (mode: ${recordingConfig.mode || 'audio'})`);
+}
+
+/**
+ * Check if video recording is enabled by config mode.
+ */
+function shouldRecordVideo() {
+  const mode = config?.callRecording?.mode || 'audio';
+  return mode === 'video' || mode === 'both';
+}
+
+/**
+ * Check if audio-only WAV recording is enabled by config mode.
+ */
+function shouldRecordAudio() {
+  const mode = config?.callRecording?.mode || 'audio';
+  return mode === 'audio' || mode === 'both';
 }
 
 /**
@@ -48,42 +72,51 @@ function startRecording() {
   }
 
   try {
+    // Always initialize AudioContext and mixer — needed for both audio WAV
+    // pipeline and as the audio source for MediaRecorder in video mode
     audioContext = new AudioContext({ sampleRate });
     mixedDestination = audioContext.createMediaStreamDestination();
 
-    // Buffer size 4096, mono input, mono output
-    scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
-    mixedDestination.stream.getAudioTracks().forEach(track => {
-      const source = audioContext.createMediaStreamSource(
-        new MediaStream([track])
-      );
-      source.connect(scriptProcessor);
-    });
+    if (shouldRecordAudio()) {
+      // Buffer size 4096, mono input, mono output
+      scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+      mixedDestination.stream.getAudioTracks().forEach(track => {
+        const source = audioContext.createMediaStreamSource(
+          new MediaStream([track])
+        );
+        source.connect(scriptProcessor);
+      });
 
-    scriptProcessor.connect(audioContext.destination);
+      scriptProcessor.connect(audioContext.destination);
 
-    scriptProcessor.onaudioprocess = (event) => {
-      if (!isRecording) return;
-      const inputData = event.inputBuffer.getChannelData(0);
-      // Convert Float32 to Int16 PCM
-      const pcm16 = float32ToInt16(inputData);
+      scriptProcessor.onaudioprocess = (event) => {
+        if (!isRecording) return;
+        const inputData = event.inputBuffer.getChannelData(0);
+        // Convert Float32 to Int16 PCM
+        const pcm16 = float32ToInt16(inputData);
+        if (ipcRendererRef) {
+          ipcRendererRef.send('call-recording-chunk', Array.from(pcm16));
+        }
+      };
+
       if (ipcRendererRef) {
-        ipcRendererRef.send('call-recording-chunk', Array.from(pcm16));
+        ipcRendererRef.send('call-recording-start', { sampleRate, channels: 1 });
       }
-    };
+    }
 
     isRecording = true;
-
-    if (ipcRendererRef) {
-      ipcRendererRef.send('call-recording-start', { sampleRate, channels: 1 });
-    }
 
     // Connect any already-captured streams
     for (const src of connectedSources) {
       connectStreamToMixer(src.stream, src.label);
     }
 
-    console.info(`${LOG_PREFIX} Recording started`);
+    // Start video recording if a remote video track is already available
+    if (shouldRecordVideo() && remoteVideoTrack && remoteVideoTrack.readyState !== 'ended') {
+      startVideoRecording();
+    }
+
+    console.info(`${LOG_PREFIX} Recording started (mode: ${config?.callRecording?.mode || 'audio'})`);
   } catch (error) {
     console.error(`${LOG_PREFIX} Failed to start recording:`, error.message);
   }
@@ -101,6 +134,10 @@ function stopRecording() {
   isRecording = false;
 
   try {
+    // Stop video recording first
+    stopVideoRecording();
+    remoteVideoTrack = null;
+
     if (scriptProcessor) {
       scriptProcessor.disconnect();
       scriptProcessor = null;
@@ -121,13 +158,95 @@ function stopRecording() {
     audioContext = null;
     mixedDestination = null;
 
-    if (ipcRendererRef) {
+    if (ipcRendererRef && shouldRecordAudio()) {
       ipcRendererRef.send('call-recording-stop');
     }
 
     console.info(`${LOG_PREFIX} Recording stopped`);
   } catch (error) {
     console.error(`${LOG_PREFIX} Error stopping recording:`, error.message);
+  }
+}
+
+/**
+ * Start video recording using MediaRecorder with remote video + mixed audio.
+ */
+function startVideoRecording() {
+  if (mediaRecorder || !remoteVideoTrack || remoteVideoTrack.readyState === 'ended') {
+    return;
+  }
+
+  try {
+    const tracks = [remoteVideoTrack];
+
+    // Add mixed audio track from the AudioContext destination
+    if (mixedDestination) {
+      const audioTracks = mixedDestination.stream.getAudioTracks();
+      if (audioTracks.length > 0) {
+        tracks.push(audioTracks[0]);
+      }
+    }
+
+    combinedStream = new MediaStream(tracks);
+
+    const mimeType = 'video/webm;codecs=vp8,opus';
+    if (!MediaRecorder.isTypeSupported(mimeType)) {
+      console.error(`${LOG_PREFIX} MediaRecorder does not support ${mimeType}`);
+      return;
+    }
+
+    mediaRecorder = new MediaRecorder(combinedStream, {
+      mimeType,
+      videoBitsPerSecond: 1_500_000,
+    });
+
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0 && ipcRendererRef) {
+        event.data.arrayBuffer().then(buffer => {
+          ipcRendererRef.send('call-video-recording-chunk', Buffer.from(buffer));
+        });
+      }
+    };
+
+    mediaRecorder.onerror = (event) => {
+      console.error(`${LOG_PREFIX} MediaRecorder error:`, event.error?.message);
+    };
+
+    // Request data every 1 second
+    mediaRecorder.start(1000);
+
+    if (ipcRendererRef) {
+      ipcRendererRef.send('call-video-recording-start', { mimeType });
+    }
+
+    console.info(`${LOG_PREFIX} Video recording started`);
+  } catch (error) {
+    console.error(`${LOG_PREFIX} Failed to start video recording:`, error.message);
+  }
+}
+
+/**
+ * Stop video recording and finalize the WebM file.
+ */
+function stopVideoRecording() {
+  if (!mediaRecorder) {
+    return;
+  }
+
+  try {
+    if (mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+    mediaRecorder = null;
+    combinedStream = null;
+
+    if (ipcRendererRef) {
+      ipcRendererRef.send('call-video-recording-stop');
+    }
+
+    console.info(`${LOG_PREFIX} Video recording stopped`);
+  } catch (error) {
+    console.error(`${LOG_PREFIX} Error stopping video recording:`, error.message);
   }
 }
 
@@ -154,7 +273,7 @@ function connectStreamToMixer(stream, label) {
 }
 
 /**
- * Patch RTCPeerConnection to intercept remote audio tracks.
+ * Patch RTCPeerConnection to intercept remote audio and video tracks.
  */
 function patchRTCPeerConnection() {
   const OriginalRTCPeerConnection = globalThis.RTCPeerConnection;
@@ -176,6 +295,18 @@ function patchRTCPeerConnection() {
           connectStreamToMixer(remoteStream, 'remote');
         }
       }
+
+      if (event.track.kind === 'video' && event.streams.length > 0) {
+        // Capture the first remote video track for recording
+        if (!remoteVideoTrack || remoteVideoTrack.readyState === 'ended') {
+          remoteVideoTrack = event.track;
+          console.debug(`${LOG_PREFIX} Captured remote video track`);
+
+          if (isRecording && shouldRecordVideo()) {
+            startVideoRecording();
+          }
+        }
+      }
     });
 
     return pc;
@@ -191,7 +322,7 @@ function patchRTCPeerConnection() {
     }
   });
 
-  console.debug(`${LOG_PREFIX} Patched RTCPeerConnection for remote audio capture`);
+  console.debug(`${LOG_PREFIX} Patched RTCPeerConnection for remote audio/video capture`);
 }
 
 /**

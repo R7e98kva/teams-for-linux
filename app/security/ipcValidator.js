@@ -59,6 +59,11 @@ const allowedChannels = new Set([
   'call-recording-start',
   'call-recording-chunk',
   'call-recording-stop',
+
+  // Video call recording
+  'call-video-recording-start',
+  'call-video-recording-chunk',
+  'call-video-recording-stop',
   
   // Authentication and forms
   'submitForm',

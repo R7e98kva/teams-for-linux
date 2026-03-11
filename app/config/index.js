@@ -538,9 +538,10 @@ function extractYargConfig(configObject, appVersion) {
       callRecording: {
         default: {
           enabled: false,
+          mode: "audio",
           outputDirectory: "",
         },
-        describe: "Call recording configuration. When enabled, automatically records both sides of audio during calls and saves as WAV files. outputDirectory: custom path for recordings (defaults to ~/Documents/TeamsRecordings).",
+        describe: "Call recording configuration. mode: 'audio' (WAV only), 'video' (WebM with video+audio), 'both' (both files). outputDirectory: custom path (defaults to ~/Documents/TeamsRecordings).",
         type: "object",
       },
       wayland: {
