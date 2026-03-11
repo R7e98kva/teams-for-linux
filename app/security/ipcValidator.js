@@ -54,6 +54,11 @@ const allowedChannels = new Set([
   // Media status (camera/microphone)
   'camera-state-changed',
   'microphone-state-changed',
+
+  // Call recording
+  'call-recording-start',
+  'call-recording-chunk',
+  'call-recording-stop',
   
   // Authentication and forms
   'submitForm',

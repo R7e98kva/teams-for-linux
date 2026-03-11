@@ -1,5 +1,6 @@
 const activityHub = require("../tools/activityHub");
 const wakeLock = require("../tools/wakeLock");
+const callRecorder = require("../tools/callRecorder");
 
 class ActivityManager {
   constructor(ipcRenderer, config) {
@@ -108,11 +109,13 @@ function incomingCallEndedHandler(self) {
 function callConnectedHandler(self) {
   return async () => {
     self.ipcRenderer.invoke("call-connected");
+    callRecorder.startRecording();
   };
 }
 
 function callDisconnectedHandler(self) {
   return async () => {
+    callRecorder.stopRecording();
     self.ipcRenderer.invoke("call-disconnected");
   };
 }

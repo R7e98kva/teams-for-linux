@@ -535,6 +535,14 @@ function extractYargConfig(configObject, appVersion) {
         describe: "Authentication configuration (currently supports Intune SSO)",
         type: "object",
       },
+      callRecording: {
+        default: {
+          enabled: false,
+          outputDirectory: "",
+        },
+        describe: "Call recording configuration. When enabled, automatically records both sides of audio during calls and saves as WAV files. outputDirectory: custom path for recordings (defaults to ~/Documents/TeamsRecordings).",
+        type: "object",
+      },
       wayland: {
         default: {
           xwaylandOptimizations: false,

@@ -18,6 +18,7 @@ const CommandLineManager = require("./startup/commandLine");
 const NotificationService = require("./notifications/service");
 const CustomNotificationManager = require("./notificationSystem");
 const QuickChatManager = require("./quickChat");
+const CallRecordingManager = require("./callRecording");
 const ScreenSharingService = require("./screenSharing/service");
 const PartitionsManager = require("./partitions/manager");
 const IdleMonitor = require("./idle/monitor");
@@ -444,6 +445,10 @@ async function handleAppReady() {
     const customBackground = new CustomBackground(app, config);
     customBackground.initialize();
     await mainAppWindow.onAppReady(appConfig, customBackground, screenSharingService);
+
+    // Initialize call recording if enabled
+    const callRecordingManager = new CallRecordingManager(config);
+    callRecordingManager.registerHandlers();
 
     initializeGraphApiClient();
     registerGraphApiHandlers(ipcMain, graphApiClient);
