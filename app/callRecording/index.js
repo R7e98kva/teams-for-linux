@@ -14,6 +14,7 @@ class CallRecordingManager {
   #currentFilePath;
   #videoWriteStream;
   #currentVideoFilePath;
+  #videoRecordingStartTime;
 
   constructor(config) {
     this.#config = config;
@@ -24,6 +25,7 @@ class CallRecordingManager {
     this.#currentFilePath = null;
     this.#videoWriteStream = null;
     this.#currentVideoFilePath = null;
+    this.#videoRecordingStartTime = null;
 
     const configDir = config?.callRecording?.outputDirectory;
     this.#outputDir = configDir || path.join(app.getPath('documents'), 'TeamsRecordings');
@@ -148,6 +150,7 @@ class CallRecordingManager {
 
     try {
       this.#videoWriteStream = fs.createWriteStream(this.#currentVideoFilePath);
+      this.#videoRecordingStartTime = Date.now();
       console.info(`${LOG_PREFIX} Video recording to file: ${filename}`);
     } catch (error) {
       console.error(`${LOG_PREFIX} Failed to create video recording file:`, error.message);
@@ -173,8 +176,15 @@ class CallRecordingManager {
       return;
     }
 
+    const durationMs = this.#videoRecordingStartTime
+      ? Date.now() - this.#videoRecordingStartTime
+      : 0;
+
     try {
       this.#videoWriteStream.end(() => {
+        if (durationMs > 0) {
+          this.#updateWebMDuration(this.#currentVideoFilePath, durationMs);
+        }
         console.info(`${LOG_PREFIX} Video recording saved: ${this.#currentVideoFilePath}`);
       });
     } catch (error) {
@@ -182,6 +192,49 @@ class CallRecordingManager {
     }
 
     this.#videoWriteStream = null;
+    this.#videoRecordingStartTime = null;
+  }
+
+  /**
+   * Update the WebM Duration element in the EBML header.
+   * Searches for the Duration element ID (0x4489) and overwrites
+   * the float64 value with the actual duration in milliseconds.
+   */
+  #updateWebMDuration(filePath, durationMs) {
+    try {
+      const fd = fs.openSync(filePath, 'r+');
+      // Duration element is always near the start of the file
+      const searchSize = 65536;
+      const searchBuffer = Buffer.alloc(searchSize);
+      const bytesRead = fs.readSync(fd, searchBuffer, 0, searchSize, 0);
+
+      let durationPos = -1;
+      for (let i = 0; i < bytesRead - 10; i++) {
+        // Duration element ID: 0x44 0x89
+        // Followed by VINT size 0x88 (meaning 8 bytes of data)
+        if (searchBuffer[i] === 0x44
+          && searchBuffer[i + 1] === 0x89
+          && searchBuffer[i + 2] === 0x88) {
+          durationPos = i + 3;
+          break;
+        }
+      }
+
+      if (durationPos === -1) {
+        console.warn(`${LOG_PREFIX} WebM Duration element not found, skipping duration update`);
+        fs.closeSync(fd);
+        return;
+      }
+
+      // EBML floats are big-endian IEEE 754
+      const durationBuffer = Buffer.alloc(8);
+      durationBuffer.writeDoubleBE(durationMs, 0);
+      fs.writeSync(fd, durationBuffer, 0, 8, durationPos);
+      fs.closeSync(fd);
+      console.info(`${LOG_PREFIX} WebM duration updated: ${Math.round(durationMs / 1000)}s`);
+    } catch (error) {
+      console.error(`${LOG_PREFIX} Failed to update WebM duration:`, error.message);
+    }
   }
 
   /**
