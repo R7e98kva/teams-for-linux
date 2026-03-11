@@ -172,7 +172,12 @@ function stopRecording() {
  * Start video recording using MediaRecorder with remote video + mixed audio.
  */
 function startVideoRecording() {
-  if (mediaRecorder || !remoteVideoTrack || remoteVideoTrack.readyState === 'ended') {
+  if (mediaRecorder) {
+    console.debug(`${LOG_PREFIX} Video recording already active`);
+    return;
+  }
+  if (!remoteVideoTrack || remoteVideoTrack.readyState === 'ended') {
+    console.debug(`${LOG_PREFIX} No active remote video track available`);
     return;
   }
 
@@ -203,13 +208,19 @@ function startVideoRecording() {
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0 && ipcRendererRef) {
         event.data.arrayBuffer().then(buffer => {
-          ipcRendererRef.send('call-video-recording-chunk', Buffer.from(buffer));
+          ipcRendererRef.send('call-video-recording-chunk', Array.from(new Uint8Array(buffer)));
+        }).catch(error => {
+          console.error(`${LOG_PREFIX} Failed to process video chunk:`, error.message);
         });
       }
     };
 
     mediaRecorder.onerror = (event) => {
       console.error(`${LOG_PREFIX} MediaRecorder error:`, event.error?.message);
+    };
+
+    mediaRecorder.onstop = () => {
+      console.debug(`${LOG_PREFIX} MediaRecorder stopped`);
     };
 
     // Request data every 1 second
