@@ -196,44 +196,85 @@ class CallRecordingManager {
   }
 
   /**
-   * Update the WebM Duration element in the EBML header.
-   * Searches for the Duration element ID (0x4489) and overwrites
-   * the float64 value with the actual duration in milliseconds.
+   * Update the WebM Segment size and Duration element after recording.
+   * Chrome's MediaRecorder writes Segment with "unknown" size and Duration
+   * as 0, which prevents players from showing length or allowing seeking.
+   * This patches both in-place.
    */
   #updateWebMDuration(filePath, durationMs) {
     try {
+      const fileSize = fs.statSync(filePath).size;
       const fd = fs.openSync(filePath, 'r+');
-      // Duration element is always near the start of the file
-      const searchSize = 65536;
-      const searchBuffer = Buffer.alloc(searchSize);
-      const bytesRead = fs.readSync(fd, searchBuffer, 0, searchSize, 0);
+      const searchSize = Math.min(65536, fileSize);
+      const buf = Buffer.alloc(searchSize);
+      const bytesRead = fs.readSync(fd, buf, 0, searchSize, 0);
 
-      let durationPos = -1;
-      for (let i = 0; i < bytesRead - 10; i++) {
-        // Duration element ID: 0x44 0x89
-        // Followed by VINT size 0x88 (meaning 8 bytes of data)
-        if (searchBuffer[i] === 0x44
-          && searchBuffer[i + 1] === 0x89
-          && searchBuffer[i + 2] === 0x88) {
-          durationPos = i + 3;
+      // 1. Find and fix Segment size (ID: 0x18 0x53 0x80 0x67)
+      // Chrome writes it as 0x01FFFFFFFFFFFFFF ("unknown" 8-byte VINT)
+      let segmentDataStart = -1;
+      for (let i = 0; i < bytesRead - 12; i++) {
+        if (buf[i] === 0x18 && buf[i + 1] === 0x53
+          && buf[i + 2] === 0x80 && buf[i + 3] === 0x67) {
+          const sizePos = i + 4;
+          // Chrome always writes an 8-byte VINT (starts with 0x01)
+          if (buf[sizePos] === 0x01) {
+            segmentDataStart = sizePos + 8;
+            const actualSize = fileSize - segmentDataStart;
+            // Write 8-byte VINT: first byte 0x01 (marker), then 7 bytes big-endian
+            const sizeBuf = Buffer.alloc(8);
+            sizeBuf[0] = 0x01;
+            // Write 7-byte big-endian integer for the segment data size
+            for (let b = 7; b >= 1; b--) {
+              sizeBuf[b] = Number(BigInt(actualSize) >> (BigInt(7 - b) * 8n) & 0xFFn);
+            }
+            fs.writeSync(fd, sizeBuf, 0, 8, sizePos);
+            console.debug(`${LOG_PREFIX} WebM Segment size updated: ${actualSize} bytes`);
+          }
           break;
         }
       }
 
-      if (durationPos === -1) {
-        console.warn(`${LOG_PREFIX} WebM Duration element not found, skipping duration update`);
-        fs.closeSync(fd);
-        return;
+      // 2. Find and fix Duration element (ID: 0x44 0x89)
+      const searchStart = segmentDataStart > 0 ? segmentDataStart : 0;
+      for (let i = searchStart; i < bytesRead - 10; i++) {
+        if (buf[i] === 0x44 && buf[i + 1] === 0x89) {
+          // Parse the VINT size that follows the element ID
+          const vintByte = buf[i + 2];
+          let vintWidth = 0;
+          let dataSize = 0;
+          // VINT width is determined by leading zeros + 1
+          for (let bit = 7; bit >= 0; bit--) {
+            if (vintByte & (1 << bit)) {
+              vintWidth = 8 - bit;
+              // Mask off the VINT marker bit from first byte
+              dataSize = vintByte & ((1 << bit) - 1);
+              break;
+            }
+          }
+          // Read remaining VINT bytes
+          for (let b = 1; b < vintWidth; b++) {
+            dataSize = (dataSize << 8) | buf[i + 2 + b];
+          }
+
+          if (dataSize === 8 || dataSize === 4) {
+            const dataPos = i + 2 + vintWidth;
+            const durBuf = Buffer.alloc(dataSize);
+            if (dataSize === 8) {
+              durBuf.writeDoubleBE(durationMs, 0);
+            } else {
+              durBuf.writeFloatBE(durationMs, 0);
+            }
+            fs.writeSync(fd, durBuf, 0, dataSize, dataPos);
+            console.debug(`${LOG_PREFIX} WebM Duration element updated: ${Math.round(durationMs / 1000)}s`);
+          }
+          break;
+        }
       }
 
-      // EBML floats are big-endian IEEE 754
-      const durationBuffer = Buffer.alloc(8);
-      durationBuffer.writeDoubleBE(durationMs, 0);
-      fs.writeSync(fd, durationBuffer, 0, 8, durationPos);
       fs.closeSync(fd);
-      console.info(`${LOG_PREFIX} WebM duration updated: ${Math.round(durationMs / 1000)}s`);
+      console.info(`${LOG_PREFIX} WebM metadata updated: ${Math.round(durationMs / 1000)}s`);
     } catch (error) {
-      console.error(`${LOG_PREFIX} Failed to update WebM duration:`, error.message);
+      console.error(`${LOG_PREFIX} Failed to update WebM metadata:`, error.message);
     }
   }
 
