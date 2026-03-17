@@ -196,86 +196,162 @@ class CallRecordingManager {
   }
 
   /**
+   * Parse an EBML VINT (variable-size integer) from a buffer at a given offset.
+   * Returns { value, width } where width is the number of bytes consumed.
+   */
+  #parseVint(buf, offset) {
+    const firstByte = buf[offset];
+    let width = 0;
+    for (let bit = 7; bit >= 0; bit--) {
+      if (firstByte & (1 << bit)) {
+        width = 8 - bit;
+        break;
+      }
+    }
+    if (width === 0) return { value: 0, width: 1 };
+
+    // Mask off the VINT marker bit from the first byte
+    let value = firstByte & ((1 << (8 - width)) - 1);
+    for (let b = 1; b < width; b++) {
+      value = (value * 256) + buf[offset + b];
+    }
+    return { value, width };
+  }
+
+  /**
+   * Write a 7-byte big-endian value into an 8-byte VINT buffer (0x01 prefix).
+   */
+  #writeSegmentSizeVint(size) {
+    const buf = Buffer.alloc(8);
+    buf[0] = 0x01;
+    let remaining = BigInt(size);
+    for (let b = 7; b >= 1; b--) {
+      buf[b] = Number(remaining & 0xFFn);
+      remaining >>= 8n;
+    }
+    return buf;
+  }
+
+  /**
    * Update the WebM Segment size and Duration element after recording.
-   * Chrome's MediaRecorder writes Segment with "unknown" size and Duration
-   * as 0, which prevents players from showing length or allowing seeking.
-   * This patches both in-place.
+   * Chrome's MediaRecorder writes Segment with "unknown" size and may omit
+   * the Duration element entirely. This method handles both updating an
+   * existing Duration and inserting one if missing.
    */
   #updateWebMDuration(filePath, durationMs) {
     try {
-      const fileSize = fs.statSync(filePath).size;
-      const fd = fs.openSync(filePath, 'r+');
-      const searchSize = Math.min(65536, fileSize);
-      const buf = Buffer.alloc(searchSize);
-      const bytesRead = fs.readSync(fd, buf, 0, searchSize, 0);
+      const fileData = fs.readFileSync(filePath);
+      const len = fileData.length;
 
-      // 1. Find and fix Segment size (ID: 0x18 0x53 0x80 0x67)
-      // Chrome writes it as 0x01FFFFFFFFFFFFFF ("unknown" 8-byte VINT)
-      let segmentDataStart = -1;
-      for (let i = 0; i < bytesRead - 12; i++) {
-        if (buf[i] === 0x18 && buf[i + 1] === 0x53
-          && buf[i + 2] === 0x80 && buf[i + 3] === 0x67) {
-          const sizePos = i + 4;
-          // Chrome always writes an 8-byte VINT (starts with 0x01)
-          if (buf[sizePos] === 0x01) {
-            segmentDataStart = sizePos + 8;
-            const actualSize = fileSize - segmentDataStart;
-            // Write 8-byte VINT: first byte 0x01 (marker), then 7 bytes big-endian
-            const sizeBuf = Buffer.alloc(8);
-            sizeBuf[0] = 0x01;
-            // Write 7-byte big-endian integer for the segment data size
-            for (let b = 7; b >= 1; b--) {
-              sizeBuf[b] = Number(BigInt(actualSize) >> (BigInt(7 - b) * 8n) & 0xFFn);
-            }
-            fs.writeSync(fd, sizeBuf, 0, 8, sizePos);
-            console.debug(`${LOG_PREFIX} WebM Segment size updated: ${actualSize} bytes`);
-          }
+      // 1. Find Segment element (ID: 0x18 0x53 0x80 0x67)
+      let segPos = -1;
+      for (let i = 0; i < Math.min(len, 64) - 4; i++) {
+        if (fileData[i] === 0x18 && fileData[i + 1] === 0x53
+          && fileData[i + 2] === 0x80 && fileData[i + 3] === 0x67) {
+          segPos = i;
           break;
         }
       }
+      if (segPos === -1) {
+        console.warn(`${LOG_PREFIX} WebM Segment element not found`);
+        return;
+      }
 
-      // 2. Find and fix Duration element (ID: 0x44 0x89)
-      const searchStart = segmentDataStart > 0 ? segmentDataStart : 0;
-      for (let i = searchStart; i < bytesRead - 10; i++) {
-        if (buf[i] === 0x44 && buf[i + 1] === 0x89) {
-          // Parse the VINT size that follows the element ID
-          const vintByte = buf[i + 2];
-          let vintWidth = 0;
-          let dataSize = 0;
-          // VINT width is determined by leading zeros + 1
-          for (let bit = 7; bit >= 0; bit--) {
-            if (vintByte & (1 << bit)) {
-              vintWidth = 8 - bit;
-              // Mask off the VINT marker bit from first byte
-              dataSize = vintByte & ((1 << bit) - 1);
-              break;
-            }
-          }
-          // Read remaining VINT bytes
-          for (let b = 1; b < vintWidth; b++) {
-            dataSize = (dataSize << 8) | buf[i + 2 + b];
-          }
+      const segSizeVint = this.#parseVint(fileData, segPos + 4);
+      const segDataStart = segPos + 4 + segSizeVint.width;
 
-          if (dataSize === 8 || dataSize === 4) {
-            const dataPos = i + 2 + vintWidth;
-            const durBuf = Buffer.alloc(dataSize);
-            if (dataSize === 8) {
+      // 2. Find Info element (ID: 0x15 0x49 0xA9 0x66) inside Segment
+      let infoPos = -1;
+      const searchEnd = Math.min(len, 65536);
+      for (let i = segDataStart; i < searchEnd - 4; i++) {
+        if (fileData[i] === 0x15 && fileData[i + 1] === 0x49
+          && fileData[i + 2] === 0xA9 && fileData[i + 3] === 0x66) {
+          infoPos = i;
+          break;
+        }
+      }
+      if (infoPos === -1) {
+        console.warn(`${LOG_PREFIX} WebM Info element not found`);
+        return;
+      }
+
+      const infoSizeVint = this.#parseVint(fileData, infoPos + 4);
+      const infoDataStart = infoPos + 4 + infoSizeVint.width;
+      const infoDataEnd = infoDataStart + infoSizeVint.value;
+
+      // 3. Search for existing Duration element (ID: 0x44 0x89) inside Info
+      let durationFound = false;
+      for (let i = infoDataStart; i < infoDataEnd - 3; i++) {
+        if (fileData[i] === 0x44 && fileData[i + 1] === 0x89) {
+          const durSizeVint = this.#parseVint(fileData, i + 2);
+          if (durSizeVint.value === 8 || durSizeVint.value === 4) {
+            const dataPos = i + 2 + durSizeVint.width;
+            const durBuf = Buffer.alloc(durSizeVint.value);
+            if (durSizeVint.value === 8) {
               durBuf.writeDoubleBE(durationMs, 0);
             } else {
               durBuf.writeFloatBE(durationMs, 0);
             }
-            fs.writeSync(fd, durBuf, 0, dataSize, dataPos);
-            console.debug(`${LOG_PREFIX} WebM Duration element updated: ${Math.round(durationMs / 1000)}s`);
+            durBuf.copy(fileData, dataPos);
+            durationFound = true;
+            console.debug(`${LOG_PREFIX} WebM Duration element updated in-place`);
           }
           break;
         }
       }
 
-      fs.closeSync(fd);
+      let outputData = fileData;
+
+      if (!durationFound) {
+        // 4. Insert Duration element at the end of Info data
+        // Duration element: 0x44 0x89 (ID) + 0x88 (VINT size=8) + 8 bytes float64 = 11 bytes
+        const durElement = Buffer.alloc(11);
+        durElement[0] = 0x44;
+        durElement[1] = 0x89;
+        durElement[2] = 0x88;
+        durElement.writeDoubleBE(durationMs, 3);
+
+        // Rebuild: [before insertion point] + [duration element] + [rest of file]
+        const before = fileData.subarray(0, infoDataEnd);
+        const after = fileData.subarray(infoDataEnd);
+        outputData = Buffer.concat([before, durElement, after]);
+
+        // 5. Update Info element size (add 11 bytes)
+        const newInfoSize = infoSizeVint.value + 11;
+        // Rewrite the Info size VINT in the same width
+        const infoSizePos = infoPos + 4;
+        const newInfoSizeVint = this.#encodeVint(newInfoSize, infoSizeVint.width);
+        newInfoSizeVint.copy(outputData, infoSizePos);
+
+        console.debug(`${LOG_PREFIX} WebM Duration element inserted`);
+      }
+
+      // 6. Update Segment size to actual data size
+      const newSegDataSize = outputData.length - segDataStart;
+      const newSegSizeVint = this.#writeSegmentSizeVint(newSegDataSize);
+      newSegSizeVint.copy(outputData, segPos + 4);
+
+      fs.writeFileSync(filePath, outputData);
       console.info(`${LOG_PREFIX} WebM metadata updated: ${Math.round(durationMs / 1000)}s`);
     } catch (error) {
       console.error(`${LOG_PREFIX} Failed to update WebM metadata:`, error.message);
     }
+  }
+
+  /**
+   * Encode a value as an EBML VINT with a specific width.
+   */
+  #encodeVint(value, width) {
+    const buf = Buffer.alloc(width);
+    // Set the VINT marker bit in the first byte
+    const markerBit = 1 << (8 - width);
+    let remaining = value;
+    for (let b = width - 1; b >= 1; b--) {
+      buf[b] = remaining & 0xFF;
+      remaining = Math.floor(remaining / 256);
+    }
+    buf[0] = markerBit | (remaining & (markerBit - 1));
+    return buf;
   }
 
   /**

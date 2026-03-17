@@ -665,6 +665,7 @@ function patchRTCPeerConnection() {
 
 /**
  * Patch getUserMedia to intercept local microphone and camera streams.
+ * Also detects screen sharing via getUserMedia (Electron desktop capture format).
  */
 function patchGetUserMedia() {
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -684,11 +685,20 @@ function patchGetUserMedia() {
       }
     }
 
-    // Capture local camera video track for compositing
     if (constraints?.video && shouldRecordVideo()) {
       const videoTracks = stream.getVideoTracks();
       if (videoTracks.length > 0) {
-        setLocalVideoTrack(videoTracks[0]);
+        // Detect screen sharing via getUserMedia (Electron desktop capture)
+        const isScreenShare = constraints.video.chromeMediaSource === 'desktop'
+          || constraints.video.mandatory?.chromeMediaSource === 'desktop'
+          || constraints.video.chromeMediaSourceId
+          || constraints.video.mandatory?.chromeMediaSourceId;
+
+        if (isScreenShare) {
+          setScreenShareTrack(videoTracks[0]);
+        } else {
+          setLocalVideoTrack(videoTracks[0]);
+        }
       }
     }
 
