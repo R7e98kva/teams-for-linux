@@ -51,9 +51,9 @@ class CallRecordingManager {
       this.#handleAudioChunk(pcmData);
     });
 
-    // Receive recording stop signal
-    ipcMain.on('call-recording-stop', () => {
-      this.#handleRecordingStop();
+    // Receive recording stop signal with optional call metadata for file naming
+    ipcMain.on('call-recording-stop', (_event, callInfo) => {
+      this.#handleRecordingStop(callInfo);
     });
 
     // Receive video recording start signal with format parameters
@@ -66,12 +66,89 @@ class CallRecordingManager {
       this.#handleVideoChunk(data);
     });
 
-    // Receive video recording stop signal
-    ipcMain.on('call-video-recording-stop', () => {
-      this.#handleVideoRecordingStop();
+    // Receive video recording stop signal with optional call metadata for file naming
+    ipcMain.on('call-video-recording-stop', (_event, callInfo) => {
+      this.#handleVideoRecordingStop(callInfo);
     });
 
     console.info(`${LOG_PREFIX} Handlers registered, output directory: ${this.#outputDir}`);
+  }
+
+  /**
+   * Build a descriptive filename based on call metadata.
+   * Planned meetings: yyyy-mm-dd_hh-mm_conferenceName.ext
+   * Ad-hoc calls: yyyy-mm-dd_hh-mm_participant1-participant2.ext
+   * Fallback: teams-call-timestamp.ext
+   *
+   * @param {object} callInfo - { startTime, meetingName, participants }
+   * @param {string} ext - File extension (e.g. "wav", "webm")
+   * @returns {string} filename
+   */
+  #buildFilename(callInfo, ext) {
+    const startDate = callInfo?.startTime ? new Date(callInfo.startTime) : new Date();
+    const datePart = startDate.toISOString().slice(0, 10); // yyyy-mm-dd
+    const hours = String(startDate.getHours()).padStart(2, '0');
+    const minutes = String(startDate.getMinutes()).padStart(2, '0');
+    const timePart = `${hours}-${minutes}`;
+
+    let namePart = null;
+
+    if (callInfo?.meetingName) {
+      namePart = this.#sanitizeFilename(callInfo.meetingName);
+    } else if (callInfo?.participants?.length > 0) {
+      namePart = callInfo.participants
+        .map(name => this.#sanitizeFilename(name))
+        .filter(name => name.length > 0)
+        .join('-');
+    }
+
+    if (namePart) {
+      return `${datePart}_${timePart}_${namePart}.${ext}`;
+    }
+
+    // Fallback to timestamp-based name
+    const timestamp = startDate.toISOString().replaceAll(/[:.]/g, '-');
+    return `teams-call-${timestamp}.${ext}`;
+  }
+
+  /**
+   * Sanitize a string for use in a filename.
+   * Removes characters that are invalid in filenames across platforms.
+   */
+  #sanitizeFilename(name) {
+    return name
+      .replaceAll(/[/\\:*?"<>|]/g, '')
+      .replaceAll(/\s+/g, '_')
+      .slice(0, 100)
+      .trim();
+  }
+
+  /**
+   * Rename a recording file using call metadata.
+   * @param {string} currentPath - Current file path
+   * @param {object} callInfo - Call metadata
+   * @param {string} ext - File extension
+   * @returns {string} New file path (or original if rename failed)
+   */
+  #renameWithMetadata(currentPath, callInfo, ext) {
+    if (!currentPath || !callInfo) return currentPath;
+
+    const newFilename = this.#buildFilename(callInfo, ext);
+    const newPath = path.join(this.#outputDir, newFilename);
+
+    // Don't rename if already has the right name, or target exists
+    if (newPath === currentPath || fs.existsSync(newPath)) {
+      return currentPath;
+    }
+
+    try {
+      fs.renameSync(currentPath, newPath);
+      console.info(`${LOG_PREFIX} Renamed recording: ${newFilename}`);
+      return newPath;
+    } catch (error) {
+      console.error(`${LOG_PREFIX} Failed to rename recording:`, error.message);
+      return currentPath;
+    }
   }
 
   #ensureOutputDirectory() {
@@ -122,15 +199,19 @@ class CallRecordingManager {
     }
   }
 
-  #handleRecordingStop() {
+  #handleRecordingStop(callInfo) {
     if (!this.#writeStream) {
       return;
     }
 
+    const filePath = this.#currentFilePath;
+
     try {
       this.#writeStream.end(() => {
         this.#updateWavHeader();
-        console.info(`${LOG_PREFIX} Recording saved: ${this.#currentFilePath}`);
+        const finalPath = this.#renameWithMetadata(filePath, callInfo, 'wav');
+        this.#currentFilePath = finalPath;
+        console.info(`${LOG_PREFIX} Recording saved: ${finalPath}`);
       });
     } catch (error) {
       console.error(`${LOG_PREFIX} Failed to finalize recording:`, error.message);
@@ -171,7 +252,7 @@ class CallRecordingManager {
     }
   }
 
-  #handleVideoRecordingStop() {
+  #handleVideoRecordingStop(callInfo) {
     if (!this.#videoWriteStream) {
       return;
     }
@@ -179,13 +260,16 @@ class CallRecordingManager {
     const durationMs = this.#videoRecordingStartTime
       ? Date.now() - this.#videoRecordingStartTime
       : 0;
+    const videoFilePath = this.#currentVideoFilePath;
 
     try {
       this.#videoWriteStream.end(() => {
         if (durationMs > 0) {
-          this.#updateWebMDuration(this.#currentVideoFilePath, durationMs);
+          this.#updateWebMDuration(videoFilePath, durationMs);
         }
-        console.info(`${LOG_PREFIX} Video recording saved: ${this.#currentVideoFilePath}`);
+        const finalPath = this.#renameWithMetadata(videoFilePath, callInfo, 'webm');
+        this.#currentVideoFilePath = finalPath;
+        console.info(`${LOG_PREFIX} Video recording saved: ${finalPath}`);
       });
     } catch (error) {
       console.error(`${LOG_PREFIX} Failed to finalize video recording:`, error.message);

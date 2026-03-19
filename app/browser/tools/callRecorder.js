@@ -44,6 +44,9 @@ let canvasStream = null;
 let combinedStream = null;
 let nextTrackIndex = 0;
 
+// Call metadata for file naming
+let callStartTime = null;
+
 /**
  * Initialize the call recorder tool
  * @param {object} cfg - Application configuration
@@ -302,6 +305,75 @@ function renderFrame() {
 }
 
 /**
+ * Extract meeting/call metadata from the Teams DOM.
+ *
+ * For planned meetings: extracts the meeting title from the call header.
+ * For ad-hoc calls: extracts participant forenames from the roster or video tiles.
+ *
+ * @returns {{ meetingName: string|null, participants: string[] }}
+ */
+function extractCallMetadata() {
+  let meetingName = null;
+  const participants = [];
+
+  try {
+    // Try to get meeting title from the call header area.
+    // Teams shows the meeting title in various elements depending on version.
+    const titleSelectors = [
+      '[data-tid="call-title"]',
+      '[data-tid="meeting-title"]',
+      '.calling-header .title',
+      '.meeting-header .title',
+      '[data-tid="call-composite"] [class*="title"]',
+      '[class*="callingHeader"] [class*="title"]',
+      '[class*="meetingTitle"]',
+    ];
+
+    for (const selector of titleSelectors) {
+      const el = document.querySelector(selector);
+      if (el) {
+        const text = el.textContent?.trim();
+        if (text && text.length > 0 && text.length < 200) {
+          meetingName = text;
+          break;
+        }
+      }
+    }
+
+    // Extract participant names from the roster or video tile labels
+    const nameSelectors = [
+      '[data-tid="roster-participant"] [class*="name"]',
+      '[data-tid="participantList"] [class*="name"]',
+      '[class*="participantItem"] [class*="displayName"]',
+      '[data-tid="video-tile"] [class*="displayName"]',
+      '[class*="videoGallery"] [class*="displayName"]',
+      '[class*="callingParticipant"] [class*="name"]',
+    ];
+
+    const nameSet = new Set();
+    for (const selector of nameSelectors) {
+      for (const el of document.querySelectorAll(selector)) {
+        const text = el.textContent?.trim();
+        if (text && text.length > 0 && text.length < 100) {
+          // Extract forename (first word)
+          const forename = text.split(/\s+/)[0];
+          if (forename) {
+            nameSet.add(forename);
+          }
+        }
+      }
+      if (nameSet.size > 0) break;
+    }
+
+    participants.push(...nameSet);
+  } catch (error) {
+    console.debug(`${LOG_PREFIX} Failed to extract call metadata:`, error.message);
+  }
+
+  return { meetingName, participants };
+}
+
+/**
  * Start recording audio streams.
  * Called when a call connects.
  */
@@ -344,6 +416,7 @@ function startRecording() {
     }
 
     isRecording = true;
+    callStartTime = new Date();
 
     // Connect any already-captured streams
     for (const src of connectedSources) {
@@ -403,9 +476,19 @@ function stopRecording() {
     audioContext = null;
     mixedDestination = null;
 
+    // Extract call metadata for file naming before sending stop signals
+    const metadata = extractCallMetadata();
+    const callInfo = {
+      startTime: callStartTime?.toISOString() || null,
+      meetingName: metadata.meetingName,
+      participants: metadata.participants,
+    };
+
     if (ipcRendererRef && shouldRecordAudio()) {
-      ipcRendererRef.send('call-recording-stop');
+      ipcRendererRef.send('call-recording-stop', callInfo);
     }
+
+    callStartTime = null;
 
     console.info(`${LOG_PREFIX} Recording stopped`);
   } catch (error) {
@@ -509,7 +592,12 @@ function stopVideoRecording() {
     stopRenderLoop();
 
     if (ipcRendererRef) {
-      ipcRendererRef.send('call-video-recording-stop');
+      const metadata = extractCallMetadata();
+      ipcRendererRef.send('call-video-recording-stop', {
+        startTime: callStartTime?.toISOString() || null,
+        meetingName: metadata.meetingName,
+        participants: metadata.participants,
+      });
     }
 
     console.info(`${LOG_PREFIX} Video recording stopped`);
