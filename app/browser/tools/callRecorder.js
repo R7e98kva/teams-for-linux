@@ -6,17 +6,20 @@
  * to the main process via IPC for WAV file writing.
  *
  * When mode is "video" or "both", captures all video sources:
- * - Remote participant video tracks (via RTCPeerConnection)
- * - Local camera feed (via getUserMedia)
- * - Screen share content (via getDisplayMedia)
+ * - Remote participant video tracks (via RTCPeerConnection ontrack)
+ * - Local outgoing video (via RTCPeerConnection addTrack - includes Teams
+ *   background filters/effects)
  *
- * All sources are composited onto a canvas in a layout that gives screen
- * shares at least half the canvas. Uses MediaRecorder for WebM output.
+ * All sources are composited onto a canvas. Screen shares are detected at
+ * render time by resolution (>=1600px wide) and given 2/3 of the canvas.
  *
  * Activated automatically when a call connects if callRecording.enabled is true.
  */
 
 const LOG_PREFIX = '[CALL_RECORDER]';
+
+// Minimum video width to be considered a screen share rather than a camera
+const SCREEN_SHARE_MIN_WIDTH = 1600;
 
 let ipcRendererRef = null;
 let config = null;
@@ -33,11 +36,7 @@ const CANVAS_HEIGHT = 720;
 const RENDER_INTERVAL_MS = 33; // ~30fps
 
 let mediaRecorder = null;
-let remoteVideoTracks = new Map(); // index -> { track, videoElement }
-let localVideoTrack = null;
-let localVideoElement = null;
-let screenShareTrack = null;
-let screenShareElement = null;
+let videoTracks = new Map(); // index -> { track, videoElement, source }
 let compositeCanvas = null;
 let compositeCtx = null;
 let renderIntervalId = null;
@@ -61,7 +60,6 @@ function init(cfg, ipcRenderer) {
 
   patchRTCPeerConnection();
   patchGetUserMedia();
-  patchGetDisplayMedia();
   console.info(`${LOG_PREFIX} Initialized - auto-recording enabled (mode: ${recordingConfig.mode || 'audio'})`);
 }
 
@@ -79,13 +77,6 @@ function shouldRecordVideo() {
 function shouldRecordAudio() {
   const mode = config?.callRecording?.mode || 'audio';
   return mode === 'audio' || mode === 'both';
-}
-
-/**
- * Check if any video source is available for recording.
- */
-function hasVideoSources() {
-  return remoteVideoTracks.size > 0 || localVideoTrack || screenShareTrack;
 }
 
 /**
@@ -133,112 +124,46 @@ function removeVideoElement(videoElement) {
 }
 
 /**
- * Register a remote video track for compositing.
+ * Add a video track for compositing.
+ * @param {MediaStreamTrack} track
+ * @param {string} source - "remote", "local-camera", or "local-screenshare"
  */
-function addRemoteVideoTrack(track) {
+function addVideoTrack(track, source) {
   // Avoid duplicates
-  for (const [, entry] of remoteVideoTracks) {
+  for (const [, entry] of videoTracks) {
     if (entry.track === track) return;
   }
 
   const index = nextTrackIndex++;
   const videoElement = createVideoElement(track);
-  remoteVideoTracks.set(index, { track, videoElement });
+  videoTracks.set(index, { track, videoElement, source });
 
   track.addEventListener('ended', () => {
-    removeRemoteVideoTrack(index);
+    removeVideoTrack(index);
   });
 
-  console.debug(`${LOG_PREFIX} Added remote video track (total: ${remoteVideoTracks.size})`);
-  tryStartVideoRecording();
+  console.debug(`${LOG_PREFIX} Added ${source} video track (total: ${videoTracks.size})`);
+
+  // If recording is active but video recording hasn't started yet, start it
+  if (isRecording && shouldRecordVideo() && !mediaRecorder) {
+    startVideoRecording();
+  }
 }
 
 /**
- * Deregister a remote video track and clean up its video element.
+ * Remove a video track and clean up its video element.
  */
-function removeRemoteVideoTrack(index) {
-  const entry = remoteVideoTracks.get(index);
+function removeVideoTrack(index) {
+  const entry = videoTracks.get(index);
   if (!entry) return;
 
   removeVideoElement(entry.videoElement);
-  remoteVideoTracks.delete(index);
+  videoTracks.delete(index);
 
-  console.debug(`${LOG_PREFIX} Removed remote video track (total: ${remoteVideoTracks.size})`);
+  console.debug(`${LOG_PREFIX} Removed video track (total: ${videoTracks.size})`);
 
-  if (!hasVideoSources() && mediaRecorder) {
+  if (videoTracks.size === 0 && mediaRecorder) {
     stopVideoRecording();
-  }
-}
-
-/**
- * Set the local camera video track for compositing.
- */
-function setLocalVideoTrack(track) {
-  if (localVideoTrack === track) return;
-
-  // Clean up previous
-  if (localVideoElement) {
-    removeVideoElement(localVideoElement);
-    localVideoElement = null;
-  }
-  localVideoTrack = track;
-
-  if (track) {
-    localVideoElement = createVideoElement(track);
-    track.addEventListener('ended', () => {
-      if (localVideoTrack === track) {
-        localVideoTrack = null;
-        if (localVideoElement) {
-          removeVideoElement(localVideoElement);
-          localVideoElement = null;
-        }
-        console.debug(`${LOG_PREFIX} Local camera track ended`);
-      }
-    });
-    console.debug(`${LOG_PREFIX} Local camera track captured`);
-    tryStartVideoRecording();
-  }
-}
-
-/**
- * Set the screen share video track for compositing.
- */
-function setScreenShareTrack(track) {
-  if (screenShareTrack === track) return;
-
-  // Clean up previous
-  if (screenShareElement) {
-    removeVideoElement(screenShareElement);
-    screenShareElement = null;
-  }
-  screenShareTrack = track;
-
-  if (track) {
-    screenShareElement = createVideoElement(track);
-    track.addEventListener('ended', () => {
-      if (screenShareTrack === track) {
-        screenShareTrack = null;
-        if (screenShareElement) {
-          removeVideoElement(screenShareElement);
-          screenShareElement = null;
-        }
-        console.debug(`${LOG_PREFIX} Screen share track ended`);
-        if (!hasVideoSources() && mediaRecorder) {
-          stopVideoRecording();
-        }
-      }
-    });
-    console.debug(`${LOG_PREFIX} Screen share track captured`);
-    tryStartVideoRecording();
-  }
-}
-
-/**
- * Start video recording if conditions are met.
- */
-function tryStartVideoRecording() {
-  if (isRecording && shouldRecordVideo() && !mediaRecorder && hasVideoSources()) {
-    startVideoRecording();
   }
 }
 
@@ -298,19 +223,30 @@ function drawVideoFit(videoElement, x, y, width, height) {
 }
 
 /**
+ * Check if a video element is a screen share based on its resolution.
+ * Screen shares are typically 1600px+ wide, cameras are 640-1280px.
+ */
+function isScreenShare(videoElement) {
+  return videoElement.readyState >= 2 && videoElement.videoWidth >= SCREEN_SHARE_MIN_WIDTH;
+}
+
+/**
  * Render all video tracks onto the canvas.
+ *
+ * At render time, detects screen shares by resolution (>=1600px wide).
+ * Screen shares get 2/3 of the canvas, participants get the right 1/3.
  *
  * Layout when screen sharing is active:
  * +--------------------+---------+
- * |                    | Remote1 |
+ * |                    | Part 1  |
  * |   Screen Share     +---------+
- * |   (left 2/3)       | Remote2 |
+ * |   (left 2/3)       | Part 2  |
  * |                    +---------+
- * |                    | Local   |
+ * |                    | Part 3  |
  * +--------------------+---------+
  *
  * Layout when no screen share:
- * Standard grid of all participants (remote + local)
+ * Standard grid of all video feeds
  */
 function renderFrame() {
   if (!compositeCtx) return;
@@ -319,45 +255,48 @@ function renderFrame() {
   compositeCtx.fillStyle = '#000000';
   compositeCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-  // Collect participant video elements (remote + local camera)
-  const participants = [];
-  for (const entry of remoteVideoTracks.values()) {
-    participants.push(entry.videoElement);
-  }
-  if (localVideoElement) {
-    participants.push(localVideoElement);
+  // Separate screen shares from camera feeds by resolution
+  const screenShares = [];
+  const cameras = [];
+
+  for (const entry of videoTracks.values()) {
+    if (isScreenShare(entry.videoElement)) {
+      screenShares.push(entry.videoElement);
+    } else {
+      cameras.push(entry.videoElement);
+    }
   }
 
-  const hasScreenShare = screenShareElement && screenShareTrack
-    && screenShareTrack.readyState !== 'ended';
-
-  if (hasScreenShare) {
-    // Screen share layout: left 2/3 for screen, right 1/3 for participants
+  if (screenShares.length > 0) {
+    // Screen share layout: screen share(s) on left 2/3, cameras on right 1/3
     const shareWidth = Math.round(CANVAS_WIDTH * 2 / 3);
     const sideWidth = CANVAS_WIDTH - shareWidth;
 
-    // Draw screen share on the left (at least 2/3 of canvas)
-    drawVideoFit(screenShareElement, 0, 0, shareWidth, CANVAS_HEIGHT);
+    // Draw screen share(s) on the left — stack if multiple
+    const shareHeight = CANVAS_HEIGHT / screenShares.length;
+    for (let i = 0; i < screenShares.length; i++) {
+      drawVideoFit(screenShares[i], 0, i * shareHeight, shareWidth, shareHeight);
+    }
 
-    // Draw participants stacked on the right
-    if (participants.length > 0) {
-      const cellHeight = CANVAS_HEIGHT / participants.length;
-      for (let i = 0; i < participants.length; i++) {
-        drawVideoFit(participants[i], shareWidth, i * cellHeight, sideWidth, cellHeight);
+    // Draw camera feeds stacked on the right
+    if (cameras.length > 0) {
+      const cellHeight = CANVAS_HEIGHT / cameras.length;
+      for (let i = 0; i < cameras.length; i++) {
+        drawVideoFit(cameras[i], shareWidth, i * cellHeight, sideWidth, cellHeight);
       }
     }
   } else {
-    // No screen share — standard grid of all participants
-    if (participants.length === 0) return;
+    // No screen share — standard grid of all feeds
+    if (cameras.length === 0) return;
 
-    const { cols, rows } = calculateGrid(participants.length);
+    const { cols, rows } = calculateGrid(cameras.length);
     const cellWidth = CANVAS_WIDTH / cols;
     const cellHeight = CANVAS_HEIGHT / rows;
 
-    for (let i = 0; i < participants.length; i++) {
+    for (let i = 0; i < cameras.length; i++) {
       const col = i % cols;
       const row = Math.floor(i / cols);
-      drawVideoFit(participants[i], col * cellWidth, row * cellHeight, cellWidth, cellHeight);
+      drawVideoFit(cameras[i], col * cellWidth, row * cellHeight, cellWidth, cellHeight);
     }
   }
 }
@@ -412,7 +351,7 @@ function startRecording() {
     }
 
     // Start video recording if any video sources are already available
-    if (shouldRecordVideo() && hasVideoSources()) {
+    if (shouldRecordVideo() && videoTracks.size > 0) {
       startVideoRecording();
     }
 
@@ -437,26 +376,12 @@ function stopRecording() {
     // Stop video recording first
     stopVideoRecording();
 
-    // Clean up all remote video tracks and their video elements
-    for (const [, entry] of remoteVideoTracks) {
+    // Clean up all video tracks and their video elements
+    for (const [, entry] of videoTracks) {
       removeVideoElement(entry.videoElement);
     }
-    remoteVideoTracks.clear();
+    videoTracks.clear();
     nextTrackIndex = 0;
-
-    // Clean up local camera
-    if (localVideoElement) {
-      removeVideoElement(localVideoElement);
-      localVideoElement = null;
-    }
-    localVideoTrack = null;
-
-    // Clean up screen share
-    if (screenShareElement) {
-      removeVideoElement(screenShareElement);
-      screenShareElement = null;
-    }
-    screenShareTrack = null;
 
     if (scriptProcessor) {
       scriptProcessor.disconnect();
@@ -496,7 +421,7 @@ function startVideoRecording() {
     console.debug(`${LOG_PREFIX} Video recording already active`);
     return;
   }
-  if (!hasVideoSources()) {
+  if (videoTracks.size === 0) {
     console.debug(`${LOG_PREFIX} No active video sources available`);
     return;
   }
@@ -557,10 +482,7 @@ function startVideoRecording() {
       ipcRendererRef.send('call-video-recording-start', { mimeType });
     }
 
-    const sourceCount = remoteVideoTracks.size
-      + (localVideoTrack ? 1 : 0)
-      + (screenShareTrack ? 1 : 0);
-    console.info(`${LOG_PREFIX} Video recording started (${sourceCount} sources)`);
+    console.info(`${LOG_PREFIX} Video recording started (${videoTracks.size} sources)`);
   } catch (error) {
     console.error(`${LOG_PREFIX} Failed to start video recording:`, error.message);
     stopRenderLoop();
@@ -619,7 +541,10 @@ function connectStreamToMixer(stream, label) {
 }
 
 /**
- * Patch RTCPeerConnection to intercept remote audio and video tracks.
+ * Patch RTCPeerConnection to intercept remote and local video tracks.
+ *
+ * - Remote tracks: captured via 'track' event (incoming from other participants)
+ * - Local tracks: captured via addTrack() (outgoing, with Teams filters applied)
  */
 function patchRTCPeerConnection() {
   const OriginalRTCPeerConnection = globalThis.RTCPeerConnection;
@@ -631,10 +556,10 @@ function patchRTCPeerConnection() {
   globalThis.RTCPeerConnection = function (...args) {
     const pc = new OriginalRTCPeerConnection(...args);
 
+    // Capture incoming remote tracks
     pc.addEventListener('track', (event) => {
       if (event.track.kind === 'audio' && event.streams.length > 0) {
         const remoteStream = event.streams[0];
-        // Store for later if recording hasn't started yet
         connectedSources.push({ stream: remoteStream, node: null, label: 'remote' });
 
         if (isRecording) {
@@ -643,9 +568,20 @@ function patchRTCPeerConnection() {
       }
 
       if (event.track.kind === 'video' && event.streams.length > 0) {
-        addRemoteVideoTrack(event.track);
+        addVideoTrack(event.track, 'remote');
       }
     });
+
+    // Capture outgoing local video tracks (camera with filters, screen share)
+    // These have Teams background effects already applied.
+    const originalAddTrack = pc.addTrack.bind(pc);
+    pc.addTrack = function (track, ...streams) {
+      if (track.kind === 'video' && shouldRecordVideo()) {
+        addVideoTrack(track, 'local');
+        console.debug(`${LOG_PREFIX} Captured local outgoing video track`);
+      }
+      return originalAddTrack(track, ...streams);
+    };
 
     return pc;
   };
@@ -660,12 +596,13 @@ function patchRTCPeerConnection() {
     }
   });
 
-  console.debug(`${LOG_PREFIX} Patched RTCPeerConnection for remote audio/video capture`);
+  console.debug(`${LOG_PREFIX} Patched RTCPeerConnection for remote/local video capture`);
 }
 
 /**
- * Patch getUserMedia to intercept local microphone and camera streams.
- * Also detects screen sharing via getUserMedia (Electron desktop capture format).
+ * Patch getUserMedia to intercept local microphone stream.
+ * Video is NOT captured here — we capture it from RTCPeerConnection.addTrack()
+ * instead, which has Teams background filters/effects already applied.
  */
 function patchGetUserMedia() {
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -685,54 +622,10 @@ function patchGetUserMedia() {
       }
     }
 
-    if (constraints?.video && shouldRecordVideo()) {
-      const videoTracks = stream.getVideoTracks();
-      if (videoTracks.length > 0) {
-        // Detect screen sharing via getUserMedia (Electron desktop capture)
-        const isScreenShare = constraints.video.chromeMediaSource === 'desktop'
-          || constraints.video.mandatory?.chromeMediaSource === 'desktop'
-          || constraints.video.chromeMediaSourceId
-          || constraints.video.mandatory?.chromeMediaSourceId;
-
-        if (isScreenShare) {
-          setScreenShareTrack(videoTracks[0]);
-        } else {
-          setLocalVideoTrack(videoTracks[0]);
-        }
-      }
-    }
-
     return stream;
   };
 
-  console.debug(`${LOG_PREFIX} Patched getUserMedia for local audio/video capture`);
-}
-
-/**
- * Patch getDisplayMedia to intercept screen share streams.
- */
-function patchGetDisplayMedia() {
-  if (!navigator.mediaDevices?.getDisplayMedia) {
-    return;
-  }
-
-  const originalGetDisplayMedia = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
-
-  navigator.mediaDevices.getDisplayMedia = async function (constraints) {
-    const stream = await originalGetDisplayMedia(constraints);
-
-    // Capture screen share video track for compositing
-    if (shouldRecordVideo()) {
-      const videoTracks = stream.getVideoTracks();
-      if (videoTracks.length > 0) {
-        setScreenShareTrack(videoTracks[0]);
-      }
-    }
-
-    return stream;
-  };
-
-  console.debug(`${LOG_PREFIX} Patched getDisplayMedia for screen share capture`);
+  console.debug(`${LOG_PREFIX} Patched getUserMedia for local audio capture`);
 }
 
 /**
