@@ -3,7 +3,7 @@
 This guide provides solutions to common problems encountered with Teams for Linux, organized by category for quick reference.
 
 :::tip
-For configuration options, see [Configuration](configuration.md). For development information, see the IPC API documentation *(coming soon)*.
+For configuration options, see [Configuration](configuration.md). For development information, see the [IPC API documentation](development/ipc-api.md).
 :::
 
 ## Quick Reference
@@ -40,8 +40,6 @@ For configuration options, see [Configuration](configuration.md). For developmen
     *   Completely uninstall the current version.
     *   Download the latest installer from the official GitHub releases page.
     *   Perform a clean installation.
-
-**Related GitHub Issues:** [Link to relevant issues, e.g., #123, #456]
 
 #### Issue: No History after Electron version update
 
@@ -177,8 +175,6 @@ For configuration options, see [Configuration](configuration.md). For developmen
     *   Open a terminal and run: `pulseaudio -k && pulseaudio --start`
     *   Restart Teams for Linux.
 
-**Related GitHub Issues:** [Link to relevant issues, e.g., #789, #1011]
-
 ---
 
 ### Login and Authentication
@@ -203,8 +199,6 @@ For configuration options, see [Configuration](configuration.md). For developmen
 2.  **Check Network and Proxy Settings:**
     *   Ensure your internet connection is stable.
     *   If you are behind a corporate proxy, ensure it is correctly configured in your system settings and that Teams for Linux can access the internet through it.
-
-**Related GitHub Issues:** [Link to relevant issues, e.g., #1212, #1314]
 
 #### Issue: Oauth Services require internal Electron window
 
@@ -239,6 +233,20 @@ For configuration options, see [Configuration](configuration.md). For developmen
     If the blank page returns after reloading or closing the app, repeat the cache deletion step.
 
 **Related GitHub Issues:** [Issue #171](https://github.com/IsmaelMartinez/teams-for-linux/issues/171)
+
+---
+
+#### Issue: Third-Party SSO Login Fails (e.g. Symantec VIP)
+
+**Description:** Users with third-party SSO providers like Symantec VIP see a broken or blank login page. Console logs may show `EvalError` or Content Security Policy violations referencing `strict-dynamic` or `nonce-` directives.
+
+**Cause:** With `contextIsolation` disabled (required for Teams DOM access), Electron erroneously enforces report-only CSP headers as blocking policies.
+
+**Solutions/Workarounds:**
+
+Since v2.7.13, report-only CSP headers are automatically stripped for all non-Teams domains. No configuration is needed. If you are on an older version, upgrade to v2.7.13 or later to resolve this issue.
+
+**Related GitHub Issues:** [Issue #2326](https://github.com/IsmaelMartinez/teams-for-linux/issues/2326)
 
 ---
 

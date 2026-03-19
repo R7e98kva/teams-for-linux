@@ -451,8 +451,8 @@ function extractYargConfig(configObject, appVersion) {
       },
       msTeamsProtocols: {
         default: {
-          v1: "^msteams:/l/(?:meetup-join|channel|chat|message)",
-          v2: "^msteams://teams.(?:microsoft.com|cloud.microsoft)/l/(?:meetup-join|channel|chat|message)",
+          v1: "^msteams:/(?:meet/|l/(?:app|call|channel|chat|entity|file|meet(?:ing|up-join)|message|task|team)/)",
+          v2: String.raw`^msteams://teams\.(?:microsoft\.com|live\.com|cloud\.microsoft)/(?:meet/|l/(?:app|call|channel|chat|entity|file|meet(?:ing|up-join)|message|task|team)/)`,
         },
         describe:
           "Regular expressions for Microsoft Teams protocol links (v1 and v2).",
@@ -486,7 +486,7 @@ function extractYargConfig(configObject, appVersion) {
       },
       media: {
         default: {
-          microphone: { disableAutogain: false },
+          microphone: { disableAutogain: false, speakingIndicator: false },
           camera: {
             resolution: { enabled: false, mode: "remove" },
             autoAdjustAspectRatio: { enabled: false },
@@ -532,7 +532,7 @@ function extractYargConfig(configObject, appVersion) {
             user: "",
           },
         },
-        describe: "Authentication configuration (currently supports Intune SSO)",
+        describe: "Authentication configuration (Intune SSO)",
         type: "object",
       },
       callRecording: {

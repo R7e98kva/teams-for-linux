@@ -120,7 +120,7 @@ If you need to log sensitive data for debugging during development:
 3. Remove ALL debug logs with PII before the PR is merged
 4. Never merge PII-containing logs to main branch
 
-**For detailed logging research**, see `docs-site/docs/development/research/pii-log-removal-research.md`.
+**For detailed logging research**, see `docs-site/docs/development/adr/013-pii-log-sanitization.md` ([web version](https://ismaelmartinez.github.io/teams-for-linux/development/adr/013-pii-log-sanitization)).
 
 **For complete development patterns and guidelines**, see `docs-site/docs/development/contributing.md` ([web version](https://ismaelmartinez.github.io/teams-for-linux/development/contributing)).
 
@@ -139,7 +139,7 @@ The project uses Playwright for end-to-end testing:
 - Tests start with completely clean state (no cookies, cache, storage)
 - Validates complete app launch flow and Microsoft login redirect
 
-**For full testing strategy**, see `docs-site/docs/development/research/automated-testing-strategy.md` ([web version](https://ismaelmartinez.github.io/teams-for-linux/development/research/automated-testing-strategy)).
+**For full testing strategy**, see `docs-site/docs/development/adr/009-automated-testing-strategy.md` ([web version](https://ismaelmartinez.github.io/teams-for-linux/development/adr/009-automated-testing-strategy)).
 
 ### Quality Checks
 
@@ -212,6 +212,17 @@ if (modulesRequiringIpc.includes(module.name)) {
 
 - Always run tests and linting before commits
 - Update documentation alongside code changes
+
+### Creating Pull Requests
+
+When opening a PR that resolves a GitHub issue, always include a `closes #NNN` (or `fixes #NNN` / `resolves #NNN`) line in the PR body. This is required for the automated changelog generator to link the issue in release notes — the `closingIssuesReferences` GraphQL field only captures issues referenced this way.
+
+Example PR body footer:
+```
+closes #2293
+```
+
+Without this, the release notes will show the PR but not the originating issue, reducing traceability for users looking up bug reports.
 
 ### Responding to PR Review Comments
 

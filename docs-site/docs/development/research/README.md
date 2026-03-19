@@ -20,12 +20,18 @@ These documents capture in-depth analysis and strategic insights that inform dev
   - Proposes phased plan: replace native addon, add custom sounds, Web Audio fallback
   - **Status:** Research complete, targeted for v2.8.0
 
+- **[MQTT Microphone State via Speaking Indicator](mqtt-microphone-state-research.md)** - Publish speaking/silent/muted state to MQTT
+  - Wires existing speaking indicator WebRTC detection into MQTT via `microphone-state-changed` IPC
+  - Completes original request from #1938 (@vbartik's RGB LED home automation)
+  - **Status:** Research complete, ready for implementation (depends on PR #2299 merged)
+
 ### Awaiting User Feedback
 
 - **[MQTT Extended Status Investigation](mqtt-extended-status-investigation.md)** - Extended MQTT status publishing
-  - **Phase 1 Shipped**: Infrastructure, LWT, and call state publishing
-  - **Phase 2 Deferred**: WebRTC camera/mic monitoring awaiting user feedback
-  - **Screen sharing:** PRs [#2193](https://github.com/IsmaelMartinez/teams-for-linux/pull/2193) and [#2144](https://github.com/IsmaelMartinez/teams-for-linux/pull/2144) open for MQTT screen sharing status
+  - **Phase 1 Shipped**: Infrastructure, LWT, call state, camera, microphone, and screen sharing topics
+  - **Screen sharing null sourceId fix**: PR [#2193](https://github.com/IsmaelMartinez/teams-for-linux/pull/2193) landing in v2.7.11
+  - **Screen sharing broader feature**: PR [#2144](https://github.com/IsmaelMartinez/teams-for-linux/pull/2144) awaiting user confirmation ([#2107](https://github.com/IsmaelMartinez/teams-for-linux/issues/2107))
+  - **Phase 2 Deferred**: Reliable mute/speaking state via WebRTC `getStats()` is now proven (see speaking indicator [PR #2299](https://github.com/IsmaelMartinez/teams-for-linux/pull/2299)); wiring to MQTT awaits user demand
 
 - **[Graph API Integration Research](graph-api-integration-research.md)** - Microsoft Graph API for enhanced features
   - **Phase 1 POC Complete**: Token acquisition, calendar/mail endpoints working
@@ -33,20 +39,11 @@ These documents capture in-depth analysis and strategic insights that inform dev
 
 ### Reference
 
-- **[Codebase Review (March 2026)](codebase-review-2026.md)** - Code quality, maintainability, performance, and DX review
-  - Covers architecture, testing gaps, performance overhead, and developer experience
-  - Covers DOM observer overhead, testing gaps, and architectural inconsistencies
-  - **Status:** Review complete, findings being addressed incrementally
+- **[Project Management Tools Research](project-management-tools-research.md)** - Evaluation of Beads, release-please, release-it, and other tooling for solo OSS maintainer workflows. Status: Research complete, no implementation decision.
+
+
 
 ### Historical (Migrated)
-
-- **[GitHub Issue Bot Investigation](github-issue-bot-investigation.md)** - Intelligent GitHub issue automation (historical)
-  - All four phases implemented and migrated to standalone GitHub App
-  - See [ADR-018](../adr/018-issue-triage-bot-github-app-migration.md) and [github-issue-triage-bot](https://github.com/IsmaelMartinez/github-issue-triage-bot)
-
-- **[AI Automation Review and Enhancements](ai-automation-review-and-enhancements.md)** - Review of all AI automation systems (historical)
-  - Batches 1-2 implemented; triage bot migrated to standalone GitHub App
-  - Batch 3 (pre-research prompt generator) to be implemented in the bot repo
 
 - **[Configuration Organization Research](configuration-organization-research.md)** - Configuration system improvements
   - **Phase 1 Complete**: Documentation reorganization
@@ -65,6 +62,11 @@ Research documents are deleted once a feature is fully shipped and the document 
 
 | Feature | Version | Reference |
 |---------|---------|-----------|
+| Issue-PR Release Linking | v2.7.11 | GraphQL `closingIssuesReferences` query; `closes:` metadata in changelog files. See [PR #2317](https://github.com/IsmaelMartinez/teams-for-linux/pull/2317) |
+| Codebase Review (March 2026) | v2.7.x | Code quality, maintainability, performance, and DX review; findings addressed incrementally |
+| Issue Triage Bot | v2.7.x | All four phases implemented; migrated to standalone Go service. See [ADR-018](../adr/018-issue-triage-bot-github-app-migration.md) and [github-issue-triage-bot](https://github.com/IsmaelMartinez/github-issue-triage-bot) |
+| Dependency Cleanup | v2.7.10 | Removed `node-sound`, `lodash`, `electron-positioner`; project now has 6 production deps |
+| Speaking Indicator | v2.7.11 | WebRTC `getStats()` for three-state mute/speaking detection. See [PR #2299](https://github.com/IsmaelMartinez/teams-for-linux/pull/2299) |
 | Electron-Updater Auto-Update | v2.7.6 | [ADR-011](../adr/011-appimage-update-info.md); research covered electron-updater integration |
 | External Changelog Generation | v2.7.x | [ADR-005](../adr/005-ai-powered-changelog-generation.md); fork detection + release automation shipped |
 | Screen Lock Media Privacy | --- | Closed ([#2106](https://github.com/IsmaelMartinez/teams-for-linux/issues/2106)); no user interest; work preserved in branch |
