@@ -5,13 +5,9 @@
  * (incoming) audio during Teams calls. Records to raw PCM and sends chunks
  * to the main process via IPC for WAV file writing.
  *
- * When mode is "video" or "both", captures all video sources:
- * - Remote participant video tracks (via RTCPeerConnection ontrack)
- * - Local outgoing video (via RTCPeerConnection addTrack - includes Teams
- *   background filters/effects)
- *
- * All sources are composited onto a canvas. Screen shares are detected at
- * render time by resolution (>=1600px wide) and given 2/3 of the canvas.
+ * When mode is "video" or "both", captures screen share video tracks only
+ * (detected by resolution >=1600px wide). Participant camera feeds are
+ * excluded from the recording.
  *
  * Activated automatically when a call connects if callRecording.enabled is true.
  */
@@ -80,19 +76,6 @@ function shouldRecordVideo() {
 function shouldRecordAudio() {
   const mode = config?.callRecording?.mode || 'audio';
   return mode === 'audio' || mode === 'both';
-}
-
-/**
- * Calculate grid dimensions for participant count.
- * @param {number} count - Number of video tracks
- * @returns {{ cols: number, rows: number }}
- */
-function calculateGrid(count) {
-  if (count <= 1) return { cols: 1, rows: 1 };
-  if (count === 2) return { cols: 2, rows: 1 };
-  const cols = Math.ceil(Math.sqrt(count));
-  const rows = Math.ceil(count / cols);
-  return { cols, rows };
 }
 
 /**
@@ -234,22 +217,10 @@ function isScreenShare(videoElement) {
 }
 
 /**
- * Render all video tracks onto the canvas.
+ * Render screen share tracks onto the canvas.
  *
- * At render time, detects screen shares by resolution (>=1600px wide).
- * Screen shares get 2/3 of the canvas, participants get the right 1/3.
- *
- * Layout when screen sharing is active:
- * +--------------------+---------+
- * |                    | Part 1  |
- * |   Screen Share     +---------+
- * |   (left 2/3)       | Part 2  |
- * |                    +---------+
- * |                    | Part 3  |
- * +--------------------+---------+
- *
- * Layout when no screen share:
- * Standard grid of all video feeds
+ * Only screen shares (>=1600px wide) are rendered. Camera feeds are ignored.
+ * Multiple screen shares are stacked vertically across the full canvas.
  */
 function renderFrame() {
   if (!compositeCtx) return;
@@ -258,49 +229,19 @@ function renderFrame() {
   compositeCtx.fillStyle = '#000000';
   compositeCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-  // Separate screen shares from camera feeds by resolution
+  // Only render screen shares — skip camera feeds
   const screenShares = [];
-  const cameras = [];
-
   for (const entry of videoTracks.values()) {
     if (isScreenShare(entry.videoElement)) {
       screenShares.push(entry.videoElement);
-    } else {
-      cameras.push(entry.videoElement);
     }
   }
 
-  if (screenShares.length > 0) {
-    // Screen share layout: screen share(s) on left 2/3, cameras on right 1/3
-    const shareWidth = Math.round(CANVAS_WIDTH * 2 / 3);
-    const sideWidth = CANVAS_WIDTH - shareWidth;
+  if (screenShares.length === 0) return;
 
-    // Draw screen share(s) on the left — stack if multiple
-    const shareHeight = CANVAS_HEIGHT / screenShares.length;
-    for (let i = 0; i < screenShares.length; i++) {
-      drawVideoFit(screenShares[i], 0, i * shareHeight, shareWidth, shareHeight);
-    }
-
-    // Draw camera feeds stacked on the right
-    if (cameras.length > 0) {
-      const cellHeight = CANVAS_HEIGHT / cameras.length;
-      for (let i = 0; i < cameras.length; i++) {
-        drawVideoFit(cameras[i], shareWidth, i * cellHeight, sideWidth, cellHeight);
-      }
-    }
-  } else {
-    // No screen share — standard grid of all feeds
-    if (cameras.length === 0) return;
-
-    const { cols, rows } = calculateGrid(cameras.length);
-    const cellWidth = CANVAS_WIDTH / cols;
-    const cellHeight = CANVAS_HEIGHT / rows;
-
-    for (let i = 0; i < cameras.length; i++) {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      drawVideoFit(cameras[i], col * cellWidth, row * cellHeight, cellWidth, cellHeight);
-    }
+  const shareHeight = CANVAS_HEIGHT / screenShares.length;
+  for (let i = 0; i < screenShares.length; i++) {
+    drawVideoFit(screenShares[i], 0, i * shareHeight, CANVAS_WIDTH, shareHeight);
   }
 }
 
@@ -631,8 +572,9 @@ function connectStreamToMixer(stream, label) {
 /**
  * Patch RTCPeerConnection to intercept remote and local video tracks.
  *
- * - Remote tracks: captured via 'track' event (incoming from other participants)
- * - Local tracks: captured via addTrack() (outgoing, with Teams filters applied)
+ * All video tracks are captured so their resolution can be checked at render
+ * time. Only screen shares (>=1600px) are actually rendered; camera feeds
+ * are ignored during compositing.
  */
 function patchRTCPeerConnection() {
   const OriginalRTCPeerConnection = globalThis.RTCPeerConnection;
