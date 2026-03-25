@@ -133,6 +133,8 @@ class MQTTStatusMonitor {
 				// Send status change to main process
 				this.ipcRenderer.invoke('user-status-changed', {
 					data: { status: status }
+				}).catch(err => {
+					console.error('[MQTT Status] Failed to send status change:', err.message);
 				});
 			}
 		} catch (error) {
