@@ -39,6 +39,7 @@ let renderIntervalId = null;
 let canvasStream = null;
 let combinedStream = null;
 let nextTrackIndex = 0;
+let stopVideoDebounceTimer = null;
 
 // Call metadata for file naming
 let callStartTime = null;
@@ -120,6 +121,12 @@ function addVideoTrack(track, source) {
     if (entry.track === track) return;
   }
 
+  // Cancel any pending stop — new track arrived during transition
+  if (stopVideoDebounceTimer) {
+    clearTimeout(stopVideoDebounceTimer);
+    stopVideoDebounceTimer = null;
+  }
+
   const index = nextTrackIndex++;
   const videoElement = createVideoElement(track);
   videoTracks.set(index, { track, videoElement, source });
@@ -148,8 +155,15 @@ function removeVideoTrack(index) {
 
   console.debug(`${LOG_PREFIX} Removed video track (total: ${videoTracks.size})`);
 
+  // Debounce stop: during PiP/view transitions, tracks are rapidly removed
+  // and re-added. Wait before stopping to avoid thrashing MediaRecorder.
   if (videoTracks.size === 0 && mediaRecorder) {
-    stopVideoRecording();
+    stopVideoDebounceTimer = setTimeout(() => {
+      stopVideoDebounceTimer = null;
+      if (videoTracks.size === 0 && mediaRecorder) {
+        stopVideoRecording();
+      }
+    }, 2000);
   }
 }
 
@@ -387,6 +401,12 @@ function stopRecording() {
   isRecording = false;
 
   try {
+    // Cancel any pending debounced stop
+    if (stopVideoDebounceTimer) {
+      clearTimeout(stopVideoDebounceTimer);
+      stopVideoDebounceTimer = null;
+    }
+
     // Stop video recording first
     stopVideoRecording();
 
@@ -482,8 +502,10 @@ function startVideoRecording() {
     });
 
     mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0 && ipcRendererRef) {
+      if (event.data.size > 0 && ipcRendererRef && isRecording) {
         event.data.arrayBuffer().then(buffer => {
+          // Guard: recorder may have stopped while awaiting arrayBuffer
+          if (!isRecording) return;
           ipcRendererRef.send('call-video-recording-chunk', Array.from(new Uint8Array(buffer)));
         }).catch(error => {
           console.error(`${LOG_PREFIX} Failed to process video chunk:`, error.message);
