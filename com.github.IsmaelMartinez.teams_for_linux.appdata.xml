@@ -14,6 +14,50 @@
   <url type="bugtracker">https://github.com/IsmaelMartinez/teams-for-linux/issues</url>
   <launchable type="desktop-id">com.github.IsmaelMartinez.teams_for_linux.desktop</launchable>
   <releases>
+    <release version="2.8.0" date="2026-04-06">
+      <description>
+        <ul>
+          <li>Update: Bump Electron from 39.8.2 to 41.0.2 (#2347)</li>
+          <li>Fix: Preserve login identity after session expiry and system resume - by @IsmaelMartinez (#2376)</li>
+          <li>Remove stale roadmap sections, focus on future content - by @IsmaelMartinez (#2379)</li>
+          <li>Update minor dependencies: dbus-native, mqtt, and electron/fuses (#2380)</li>
+          <li>Update TypeScript to 6.0.2 in docs-site (#2381)</li>
+          <li>Update @xmldom/xmldom to 0.8.12, fixing whitespace and security issues. (#2384)</li>
+          <li>Fix: Pin Node.js version in cross-distro Dockerfiles to resolve test failures - by @IsmaelMartinez (#2386)</li>
+          <li>Add Repo Butler consumer guide for AI agents and health checks (#2387)</li>
+          <li>Update actions/deploy-pages to v5.0.0, including Node.js 24.x support. (#2388)</li>
+          <li>Update setup-node action to support devEngines and fix npm audit issues. (#2389)</li>
+          <li>Update roadmap with v2.8.0 progress, cross-distro testing, and Claude Code automations. - by @IsmaelMartinez (#2391)</li>
+          <li>Update: Bump lodash to 4.18.1, fixing template/fromPairs ReferenceError (#2393)</li>
+          <li>Update lodash to 4.18.1, fixing template and fromPairs ReferenceError (#2394)</li>
+          <li>Update Electron to 41.1.0, adding nativeTheme and notification urgency features. (#2395)</li>
+          <li>Fix: Update brace-expansion to resolve CVE for process hang and memory exhaustion. - by @IsmaelMartinez (#2397)</li>
+        </ul>
+      </description>
+    </release>
+    <release version="2.7.13" date="2026-03-29">
+      <description>
+        <ul>
+          <li>Fix: Ensure all notification methods return a Notification-like stub for Teams. - by @IsmaelMartinez (#2329)</li>
+          <li>Fix: Strip report-only CSP for non-Teams domains and add auth.cspBypassDomains for SSO login - by @IsmaelMartinez (#2330)</li>
+          <li>Update roadmap and FIDO2 research with community validation results. - by @IsmaelMartinez (#2341)</li>
+          <li>Add cross-distro CI smoke test and restructure test directory. - by @IsmaelMartinez (#2344)</li>
+          <li>Add CodeRabbit AI for automated code reviews. - by @IsmaelMartinez (#2348)</li>
+          <li>Fix changelog generation script errors and auto-create changelogs for fork PRs. - by @IsmaelMartinez (#2352)</li>
+          <li>Add option to force idle state via file for Wayland environments. - by @Spritkopf (#2355)</li>
+          <li>Revert FIDO2 hardware security key support for Linux - by @IsmaelMartinez (#2356)</li>
+          <li>Add system performance research and proposed improvements - by @IsmaelMartinez (#2360)</li>
+          <li>Update roadmap with current PRs, releases, and Electron upgrade status. - by @IsmaelMartinez (#2361)</li>
+          <li>Update flatted dependency to 3.4.2, including fix for CWE-1321 (#2362)</li>
+          <li>Update: Bump eslint from 10.0.3 to 10.1.0 (#2363)</li>
+          <li>Add Butler.json to enable code navigation for triage bot - by @IsmaelMartinez (#2368)</li>
+          <li>Update picomatch to 2.3.2 to fix security vulnerabilities. (#2371)</li>
+          <li>Fix: Update picomatch to 4.0.4, addressing security vulnerabilities. (#2372)</li>
+          <li>Update brace-expansion dependency to 5.0.5 in docs-site (#2374)</li>
+          <li>Fix: Bump path-to-regexp to 0.1.13 to address CVE-2026-4867 (#2375)</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.7.12" date="2026-03-15">
       <description>
         <ul>

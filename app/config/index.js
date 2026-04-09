@@ -164,6 +164,14 @@ function extractYargConfig(configObject, appVersion) {
         describe: "Sets the user status as away when system goes idle",
         type: "boolean",
       },
+      idleDetection: {
+        default: {
+          forceState: false,
+          stateFile: "/tmp/teams-for-linux-idle-state-$USER",
+        },
+        describe: "Idle detection configuration. forceState: enables state file-based idle control (workaround for Wayland/Hyprland). stateFile: path to state file with $USER expansion support.",
+        type: "object",
+      },
       chromeUserAgent: {
         default: `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`,
         describe: "Google Chrome User Agent",
@@ -407,6 +415,19 @@ function extractYargConfig(configObject, appVersion) {
         default: null,
         describe: "Proxy Server with format address:port",
         type: "string",
+      },
+      network: {
+	default: {
+		webRTCIPHandlingPolicy: null,
+	},
+      	describe:
+	  "Network configuration. " +
+    	  "webRTCIPHandlingPolicy: WebRTC IP handling policy to control which network interfaces are used for ICE candidates. " +
+    	  "Use 'default_public_interface_only' to prevent WebRTC from advertising interfaces that have no internet route " +
+    	  "(e.g. a secondary ethernet adapter), which can cause calls to drop to OnHold due to asymmetric STUN routing. " +
+    	  "Valid values: 'default', 'default_public_and_private_interfaces', 'default_public_interface_only', 'disable_non_proxied_udp'. " +
+    	  "Disabled by default (opt-in).",
+	type: "object",
       },
       screenLockInhibitionMethod: {
         default: "Electron",
