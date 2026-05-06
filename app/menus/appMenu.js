@@ -28,6 +28,11 @@ exports = module.exports = (Menus) => ({
         ]
       : []),
     {
+      label: "New Window",
+      accelerator: "ctrl+N",
+      click: () => Menus.openNewWindow(),
+    },
+    {
       label: "Refresh",
       accelerator: "ctrl+R",
       click: () => Menus.reload(),

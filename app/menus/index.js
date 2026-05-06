@@ -1,5 +1,6 @@
 const {
   app,
+  BrowserWindow,
   Menu,
   MenuItem,
   clipboard,
@@ -101,6 +102,27 @@ class Menus {
     }
 
     this.window.focus();
+  }
+
+  openNewWindow() {
+    const config = this.configGroup.startupConfig;
+    const newWindow = new BrowserWindow({
+      title: "Teams for Linux",
+      width: 1024,
+      height: 768,
+      webPreferences: {
+        partition: config.partition,
+        preload: path.join(__dirname, "..", "browser", "preload.js"),
+        plugins: true,
+        spellcheck: true,
+        webviewTag: true,
+        contextIsolation: false,
+        nodeIntegration: false,
+        sandbox: false,
+      },
+    });
+
+    newWindow.loadURL(config.url, { userAgent: config.chromeUserAgent });
   }
 
   about() {
