@@ -507,7 +507,11 @@ function extractYargConfig(configObject, appVersion) {
       },
       media: {
         default: {
-          microphone: { disableAutogain: false, speakingIndicator: false },
+          microphone: {
+            disableAutogain: false,
+            speakingIndicator: false,
+            overrideConstraints: { enabled: false },
+          },
           camera: {
             resolution: { enabled: false, mode: "remove" },
             autoAdjustAspectRatio: { enabled: false },
@@ -528,6 +532,11 @@ function extractYargConfig(configObject, appVersion) {
           statusTopic: "status",
           commandTopic: "",
           statusCheckInterval: 10000,
+          homeAssistant: {
+            enabled: false,
+            discoveryPrefix: "homeassistant",
+            deviceName: "Teams for Linux",
+          },
         },
         describe: "MQTT configuration for publishing Teams status updates and receiving action commands",
         type: "object",
@@ -563,6 +572,14 @@ function extractYargConfig(configObject, appVersion) {
           outputDirectory: "",
         },
         describe: "Call recording configuration. mode: 'audio' (WAV only), 'video' (WebM with video+audio), 'both' (both files). outputDirectory: custom path (defaults to ~/Documents/TeamsRecordings).",
+        type: "object",
+      },
+      multiAccount: {
+        default: {
+          enabled: false,
+        },
+        describe:
+          "Multi-account profile switcher configuration (see ADR-020). enabled: opt-in flag for the single-window multi-tenant switcher. Mutually exclusive with auth.intune.enabled; when both are true a startup warning is logged and multi-account is disabled for the session.",
         type: "object",
       },
       wayland: {

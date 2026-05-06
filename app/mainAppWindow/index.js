@@ -30,6 +30,9 @@ const DEFAULT_SCREEN_SHARING_THUMBNAIL_CONFIG = {
 let iconChooser;
 let intune;
 let isControlPressed = false;
+// Phase 1c.2: ProfilesManager handle threaded through onAppReady so the
+// Menus instance can build the Profiles submenu and react to its events.
+let profilesManagerRef = null;
 // Counter for tracking about:blank navigation attempts to handle authentication flows.
 // Teams sometimes navigates to about:blank during SSO/auth redirects, and we need to
 // intercept these and handle them in a hidden window to complete the auth process.
@@ -343,11 +346,12 @@ async function triggerAuthRecovery() {
   window.loadURL(config.url, { userAgent: config.chromeUserAgent });
 }
 
-exports.onAppReady = async function onAppReady(configGroup, customBackground, sharingService) {
+exports.onAppReady = async function onAppReady(configGroup, customBackground, sharingService, profilesManager = null) {
   appConfig = configGroup;
   config = configGroup.startupConfig;
   customBackgroundService = customBackground;
   screenSharingService = sharingService;
+  profilesManagerRef = profilesManager;
 
   // Support both new (auth.intune.*) and deprecated (ssoInTune*) config options
   const intuneEnabled = config.auth?.intune?.enabled || config.ssoInTuneEnabled;
@@ -427,7 +431,7 @@ exports.onAppReady = async function onAppReady(configGroup, customBackground, sh
   connectionManager = new ConnectionManager();
 
   if (iconChooser) {
-    menus = new Menus(window, configGroup, iconChooser.getFile(), connectionManager);
+    menus = new Menus(window, configGroup, iconChooser.getFile(), connectionManager, profilesManagerRef);
     menus.onSpellCheckerLanguageChanged = onSpellCheckerLanguageChanged;
   }
 
@@ -441,10 +445,18 @@ exports.onAppReady = async function onAppReady(configGroup, customBackground, sh
   // When Teams can't refresh tokens silently (e.g., after overnight idle),
   // it logs InteractionRequired. We detect this, clear stale auth state,
   // and reload to force a clean interactive login.
-  const AUTH_FAILURE_PATTERNS = ['InteractionRequired', 'AuthFailed'];
+  const AUTH_FAILURE_PATTERNS = ['InteractionRequired'];
   // Only trust auth failure signals from Teams/Microsoft origins
   const TRUSTED_AUTH_SOURCES = ['teams.cloud.microsoft', 'teams.microsoft.com', 'login.microsoftonline.com'];
   let authRecoveryTriggered = false;
+  // Worker UPRs are transient during active calls (#2428); suppress them only while
+  // a call is in progress so startup recovery still works for stale-token loops (#2480).
+  let callActive = false;
+  app.on('teams-call-connected', () => { callActive = true; });
+  app.on('teams-call-disconnected', () => { callActive = false; });
+  // Page reload (including renderer crash recovery) resets renderer-side call state,
+  // so clear the flag to avoid getting stuck if 'teams-call-disconnected' was missed.
+  window.webContents.on('did-navigate', () => { callActive = false; });
   window.webContents.on('console-message', (event) => {
     if (authRecoveryTriggered) return;
     const message = event.message || '';
@@ -453,6 +465,8 @@ exports.onAppReady = async function onAppReady(configGroup, customBackground, sh
     // Verify the message originates from a trusted Microsoft source
     const sourceId = event.sourceId || '';
     if (sourceId && !TRUSTED_AUTH_SOURCES.some(s => sourceId.includes(s))) return;
+
+    if (sourceId.includes('/worker/') && callActive) return;
 
     authRecoveryTriggered = true;
     console.info('[AUTH_RECOVERY] Auth failure detected, scheduling recovery');

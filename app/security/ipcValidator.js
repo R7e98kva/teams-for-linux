@@ -99,7 +99,28 @@ const allowedChannels = new Set([
 
   // Quick Chat modal
   'quick-chat:show',
-  'quick-chat:hide'
+  'quick-chat:hide',
+
+  // Renderer-side error forwarding (registered in app/browser/preload.js)
+  'unhandled-rejection',
+  'window-error',
+
+  // Multi-account profile switcher (ADR-020 Phase 1).
+  // Handlers are registered only when `multiAccount.enabled === true`;
+  // listing them here keeps the allowlist authoritative for the channels
+  // the feature uses end-to-end.
+  'profile-list',
+  'profile-get-active',
+  'profile-switch',
+  'profile-add',
+  'profile-update',
+  'profile-remove',
+
+  // Add-profile dialog (Phase 1c.2). Same `ipcMain.on` shape as
+  // `join-meeting-*`; submit forwards the form record to
+  // `ProfilesManager.add()`, cancel destroys the dialog.
+  'add-profile-submit',
+  'add-profile-cancel'
 ]);
 
 const DANGEROUS_PROPS = new Set(['__proto__', 'constructor', 'prototype']);
