@@ -27,6 +27,7 @@ const ProfilesManager = require("./profilesManager");
 const ProfileViewManager = require("./mainAppWindow/profileViewManager");
 const IdleMonitor = require("./idle/monitor");
 const AutoUpdater = require("./autoUpdater");
+const WebAuthn = require("./webauthn");
 const os = require("node:os");
 const isMac = os.platform() === "darwin";
 
@@ -633,6 +634,11 @@ async function handleAppReady() {
     // Initialize call recording if enabled
     const callRecordingManager = new CallRecordingManager(config);
     callRecordingManager.registerHandlers();
+
+    // Initialize WebAuthn/FIDO2 hardware security key support (Linux only)
+    if (process.platform === "linux" && config.auth?.webauthn?.enabled) {
+      await WebAuthn.initialize(mainAppWindow.getWindow(), config);
+    }
 
     initializeGraphApiClient();
     registerGraphApiHandlers(ipcMain, graphApiClient);
