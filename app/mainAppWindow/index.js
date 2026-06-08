@@ -7,6 +7,8 @@ const {
   webFrameMain,
   nativeImage,
   desktopCapturer,
+  ipcMain,
+  MessageChannelMain,
 } = require("electron");
 const { StreamSelector } = require("../screenSharing");
 const login = require("../login");
@@ -60,6 +62,28 @@ function setupScreenSharing(selectedSource) {
   createScreenSharePreviewWindow();
 }
 
+// Register the in-app screen-share picker on a given session. `setDisplayMediaRequestHandler`
+// fires only for the session it is bound to, so multi-account profile views (running against
+// their own partition session) need their own binding. See #2529.
+function bindDisplayMediaHandler(targetSession) {
+  targetSession.setDisplayMediaRequestHandler((_request, callback) => {
+    streamSelector.show((source) => {
+      if (source) {
+        handleScreenSourceSelection(source, callback);
+      } else {
+        // User canceled - use setImmediate and try-catch to allow retry
+        setImmediate(() => {
+          try {
+            callback({});
+          } catch {
+            console.debug("[SCREEN_SHARE] User canceled screen selection");
+          }
+        });
+      }
+    });
+  });
+}
+
 function handleScreenSourceSelection(source, callback) {
   desktopCapturer
     .getSources({ types: ["window", "screen"] })
@@ -102,11 +126,8 @@ function createScreenSharePreviewWindow() {
   const startTime = Date.now();
 
   // Get configuration - use the module-level config variable
-  // Support both new (screenSharing.thumbnail) and legacy (screenSharingThumbnail) config paths
   let thumbnailConfig =
-    config?.screenSharing?.thumbnail ??
-    config?.screenSharingThumbnail ??
-    DEFAULT_SCREEN_SHARING_THUMBNAIL_CONFIG;
+    config?.screenSharing?.thumbnail ?? DEFAULT_SCREEN_SHARING_THUMBNAIL_CONFIG;
 
   const previewWindow = screenSharingService.getPreviewWindow();
   const activeSource = screenSharingService.getSelectedSource();
@@ -365,9 +386,8 @@ exports.onAppReady = async function onAppReady(configGroup, customBackground, sh
   screenSharingService = sharingService;
   profilesManagerRef = profilesManager;
 
-  // Support both new (auth.intune.*) and deprecated (ssoInTune*) config options
-  const intuneEnabled = config.auth?.intune?.enabled || config.ssoInTuneEnabled;
-  const intuneUser = config.auth?.intune?.user ?? config.ssoInTuneAuthUser ?? "";
+  const intuneEnabled = config.auth?.intune?.enabled;
+  const intuneUser = config.auth?.intune?.user ?? "";
   if (intuneEnabled) {
     intune = require("../intune");
     await intune.initSso(intuneUser);
@@ -378,23 +398,20 @@ exports.onAppReady = async function onAppReady(configGroup, customBackground, sh
 
     if (isMac) {
       console.info("Setting Dock icon for macOS");
-      let dockIconPath;
-      
-      // Use custom icon if specified, otherwise use default 256x256 icon for dock
-      if (config.appIcon && config.appIcon.trim() !== "") {
-        dockIconPath = config.appIcon;
-      } else {
-        dockIconPath = path.join(config.appPath, "assets/icons/icon-96x96.png");
-      }
-      
+
+      // macOS requires >=128x128 for the dock; use the 256x256 asset by default.
+      const DEFAULT_MACOS_DOCK_ICON = "assets/icons/icon-256x256.png";
+      const dockIconPath = config.appIcon && config.appIcon.trim() !== ""
+        ? config.appIcon
+        : path.join(config.appPath, DEFAULT_MACOS_DOCK_ICON);
+
       const icon = nativeImage.createFromPath(dockIconPath);
       const iconSize = icon.getSize();
-      
+
       if (iconSize.width < 128) {
         console.warn(
           `Unable to set dock icon for macOS, icon size is less than 128x128, current size ${iconSize.width}x${iconSize.height}. Using resized icon.`
         );
-        // Resize the icon to meet macOS dock requirements
         const resizedIcon = icon.resize({ width: 128, height: 128 });
         app.dock.setIcon(resizedIcon);
       } else {
@@ -420,24 +437,45 @@ exports.onAppReady = async function onAppReady(configGroup, customBackground, sh
     window.webContents.setWebRTCIPHandlingPolicy(config.network.webRTCIPHandlingPolicy);
   }
 
-  window.webContents.session.setDisplayMediaRequestHandler(
-    (_request, callback) => {
-      streamSelector.show((source) => {
-        if (source) {
-          handleScreenSourceSelection(source, callback);
-        } else {
-          // User canceled - use setImmediate and try-catch to allow retry
-          setImmediate(() => {
-            try {
-              callback({});
-            } catch {
-              console.debug("[SCREEN_SHARE] User canceled screen selection");
-            }
-          });
-        }
-      });
+  bindDisplayMediaHandler(window.webContents.session);
+
+  // #2534: when the renderer signals that screen sharing has started, make
+  // sure the preview window is open and connect the two renderers with a
+  // direct MessagePort. The Teams-side script pumps VideoFrames from the
+  // active screen-share track through it; the preview window reconstructs the
+  // stream on the other end via MediaStreamTrackGenerator. This avoids a
+  // second getUserMedia/portal call (which on Wayland needs a PipeWire token
+  // we cannot reuse) and means one capture feeds both Teams and the preview.
+  // The 'screen-sharing-started' / 'screen-sharing-stopped' channels are a
+  // broadcast: ScreenSharingService updates internal state, MQTTMediaStatusService
+  // publishes to the broker, and this listener wires the MessagePort. Adding
+  // another ipcMain.on here is the established pattern, not a duplication.
+  ipcMain.on("screen-sharing-started", () => {
+    if (!window || window.isDestroyed()) return;
+    createScreenSharePreviewWindow();
+    const previewWindow = screenSharingService.getPreviewWindow();
+    if (!previewWindow || previewWindow.isDestroyed()) {
+      console.debug("[SCREEN_SHARE_DIAG] No preview window after creation (thumbnail disabled or already destroyed) - skipping port wiring");
+      return;
     }
-  );
+    const postPorts = () => {
+      try {
+        const { port1, port2 } = new MessageChannelMain();
+        window.webContents.postMessage("screen-share-port", null, [port1]);
+        previewWindow.webContents.postMessage("screen-share-port", null, [port2]);
+        console.debug("[SCREEN_SHARE_DIAG] Posted MessagePort to Teams renderer and preview window");
+      } catch (error) {
+        console.error("[SCREEN_SHARE_DIAG] Failed to post MessagePort", {
+          error: error.message,
+        });
+      }
+    };
+    if (previewWindow.webContents.isLoading()) {
+      previewWindow.webContents.once("did-finish-load", postPorts);
+    } else {
+      postPorts();
+    }
+  });
 
   // Initialize connection manager
   connectionManager = new ConnectionManager();
@@ -511,6 +549,8 @@ exports.show = function () {
 exports.getWindow = function () {
   return window;
 };
+
+exports.bindDisplayMediaHandler = bindDisplayMediaHandler;
 
 exports.setQuickChatManager = function (quickChatManager) {
   if (menus) {
@@ -712,7 +752,47 @@ function processArgs(args) {
   }
 }
 
+// Microsoft telemetry / beacon hosts that are not required for Teams to
+// function. Blocking these at webRequest cancels both the network traffic
+// and the downstream sub-frame failure logs they would otherwise produce
+// in restricted-network environments. Kept deliberately narrow: anything
+// Teams needs to function (teams.cloud.microsoft, *.office.net,
+// login.microsoftonline.com, *.trafficmanager.net) is excluded. Start
+// with this initial set and expand as new hosts are confirmed safe to
+// drop; any new entry must also satisfy `MS_TELEMETRY_FAST_PATH` below
+// or the fast-path string must be updated.
+const MS_TELEMETRY_HOSTS = [
+  'events.data.microsoft.com',
+  'browser.events.data.msn.com',
+];
+
+// Substring guard cheap-checked before the URL parse below. Every entry
+// in `MS_TELEMETRY_HOSTS` must contain this substring so the fast path
+// never produces a false negative.
+const MS_TELEMETRY_FAST_PATH = 'events.data.';
+
+function isMicrosoftTelemetryHost(url) {
+  // Fast path: avoid `new URL(...)` on every HTTPS request. The handler
+  // fires for every request matched by `{ urls: ["https://*/*"] }`, so
+  // skipping the parse for the overwhelmingly common non-telemetry case
+  // is measurable on chat-heavy sessions.
+  if (!url || !url.includes(MS_TELEMETRY_FAST_PATH)) return false;
+  try {
+    const hostname = new URL(url).hostname;
+    return MS_TELEMETRY_HOSTS.some(
+      (h) => hostname === h || hostname.endsWith('.' + h)
+    );
+  } catch {
+    return false;
+  }
+}
+
 function onBeforeRequestHandler(details, callback) {
+  if (isMicrosoftTelemetryHost(details.url)) {
+    callback({ cancel: true });
+    return;
+  }
+
   const customBackgroundRedirect =
     customBackgroundService.beforeRequestHandlerRedirectUrl(details);
 
@@ -722,6 +802,17 @@ function onBeforeRequestHandler(details, callback) {
   // Check if the counter was incremented
   else if (aboutBlankRequestCount < 1) {
     // Proceed normally
+    callback({});
+  } else if (details.resourceType === "mainFrame") {
+    // A top-level navigation is never the about:blank popup's own request, so
+    // it must not be diverted into the hidden child window below. Diverting it
+    // cancels the navigation (ERR_BLOCKED_BY_CLIENT) and leaves a blank page,
+    // e.g. the guest / number-matching MFA sign-in where the main frame
+    // navigates to the authorize URL right after an about:blank popup bumped
+    // the counter (#2591). A new top-level navigation also makes any pending
+    // interceptions stale, so reset the counter to 0 rather than decrementing
+    // it: that way a leftover count cannot divert the new page's sub-resources.
+    aboutBlankRequestCount = 0;
     callback({});
   } else {
     // Open request in hidden child window for authentication

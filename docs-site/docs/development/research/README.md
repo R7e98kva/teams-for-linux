@@ -10,15 +10,12 @@ These documents capture in-depth analysis and strategic insights that inform dev
 
 ### Ready for Implementation
 
+- **[WebAuthn / FIDO2 Implementation Plan](webauthn-fido2-implementation-plan.md)** - Hardware security key support on Linux via fido2-tools interception of navigator.credentials. Shipped as opt-in beta behind `auth.webauthn.enabled`. See [ADR-021](../adr/021-webauthn-fido2-linux.md).
+
 - **[System Performance Research](system-performance-research.md)** - Renderer overhead, main process I/O, and metrics infrastructure
   - Identifies 10 performance-sensitive patterns (MutationObserver sprawl, polling, sequential I/O)
   - Proposes lightweight startup/memory instrumentation with zero dependencies
   - **Status:** Item 5 (`shortcuts.js` polling) shipped; items 1, 2, 3, 4, 8 remaining and being addressed opportunistically
-
-- **[MQTT Microphone State via Speaking Indicator](mqtt-microphone-state-research.md)** - Publish speaking/silent/muted state to MQTT
-  - Wires existing speaking indicator WebRTC detection into MQTT via `microphone-state-changed` IPC
-  - Completes original request from #1938 (@vbartik's RGB LED home automation)
-  - **Status:** Implemented in [PR #2497](https://github.com/IsmaelMartinez/teams-for-linux/pull/2497) (open, awaiting test confirmation); doc to be deleted on merge
 
 ### First Iteration Shipped — Awaiting Feedback
 
@@ -31,12 +28,24 @@ These documents capture in-depth analysis and strategic insights that inform dev
 
 - **[MQTT Extended Status Investigation](mqtt-extended-status-investigation.md)** - Extended MQTT status publishing
   - **Phase 1 Shipped**: Infrastructure, LWT, call state, screen-sharing topics
-  - **Phase 2 Microphone In Flight**: Driven by speaking-indicator audioLevel; implementation in [PR #2497](https://github.com/IsmaelMartinez/teams-for-linux/pull/2497)
-  - **Phase 2 Camera Deferred**: `track.enabled` polling approach needs validation before wiring to MQTT
+  - **Phase 2 Microphone Shipped**: [PR #2497](https://github.com/IsmaelMartinez/teams-for-linux/pull/2497) merged; publishes speaking/silent/muted/off to `{topicPrefix}/microphone`
+  - **Phase 2 Camera Shipped**: [PR #2582](https://github.com/IsmaelMartinez/teams-for-linux/pull/2582) merged; renderer emits `camera-state-changed` via video track monitoring in speakingIndicator
+  - **Home Assistant Auto-Discovery Shipped**: [PR #2464](https://github.com/IsmaelMartinez/teams-for-linux/pull/2464) and [PR #2571](https://github.com/IsmaelMartinez/teams-for-linux/pull/2571) merged; sensors, binary_sensors, and buttons auto-created in HA
 
 - **[Graph API Integration Research](graph-api-integration-research.md)** - Microsoft Graph API for enhanced features
   - **Phase 1 Shipped (v2.7.4)**: Token acquisition plus 7 IPC channels (user profile, calendar events/view, calendar create, mail messages, People search, send chat). People search and send chat power Quick Chat (ADR-014, ADR-015)
   - **Phases 2-3**: Calendar widget, mail preview, presence, settings UI — not started
+
+### Idea Stage
+
+- **[Documentation, Contributing, and Config UX](documentation-and-config-ux-research.md)** — make `app/config/index.js` the single source of truth feeding generated docs, an in-app settings UI, and startup validation ([#2597](https://github.com/IsmaelMartinez/teams-for-linux/issues/2597))
+  - Found confirmed config drift (stale `msTeamsProtocols` default; undocumented `mqtt.homeAssistant.*` and `auth.webauthn.debug`); 76 options hand-mirrored in a 924-line reference with no codegen link
+  - Phased: fix drift (P0) → generate config reference + `config-schema.json` (P1) → interactive config explorer (P2) → schema `applyMode`/nested metadata (P3a) → in-app settings window (P3b) → schema-driven validation (P4)
+
+- **[Custom Stickers — External Sources](custom-stickers-online-import-research.md)** — follow-up to the v1 ship ([#2476](https://github.com/IsmaelMartinez/teams-for-linux/issues/2476), PR [#2550](https://github.com/IsmaelMartinez/teams-for-linux/pull/2550))
+  - Three realistic paths ranked by simplicity: URL paste (shipped in v1), Telegram sticker pack import (next phase), AI generation via a user-configured backend such as a local Ollama image-gen session (more futuristic)
+  - Telegram path: HTML scrape default, Bot API as opt-in fallback, static `.webp` only for v1
+  - AI path: mirrors the `customBackground` pattern; wrapper has no opinion about which backend sits at the other end
 
 ### Reference
 
@@ -63,6 +72,7 @@ Research documents are deleted once a feature is fully shipped and the document 
 
 | Feature | Version | Reference |
 |---------|---------|-----------|
+| MQTT Microphone State | v2.10.0 | Speaking-indicator driven microphone state (speaking/silent/muted/off) published to MQTT. See [PR #2497](https://github.com/IsmaelMartinez/teams-for-linux/pull/2497) |
 | Notification Sound Player (inline replacement for `node-sound`) | v2.7.10 | Phase 1 of the notification-sound research shipped — `paplay`/`pw-play`/`aplay`/`afplay` detection in `app/audio/player.js`. See [PR #2306](https://github.com/IsmaelMartinez/teams-for-linux/pull/2306) |
 | Cross-Distro CI Smoke Test | v2.7.x | Workflow `.github/workflows/cross-distro-smoke.yml` ships the design proposed in the original research. Umbrella decision in [ADR-016](../adr/016-cross-distro-testing-environment.md) |
 | Electron 41 Upgrade | v2.8.0 | Repo skipped Electron 40 entirely and jumped 39.8.2 → 41.x via dependabot [PR #2347](https://github.com/IsmaelMartinez/teams-for-linux/pull/2347), with follow-up bumps to 41.5.0; the Electron 40 migration research is therefore obsolete |

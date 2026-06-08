@@ -2,6 +2,10 @@
 
 This document details all available configuration options for the Teams for Linux application. These options can be set via command-line arguments or in a `config.json` file located in the application's configuration directory.
 
+:::note
+For a complete, always-up-to-date list of every option generated directly from the code, see the [Configuration Options Reference](configuration-generated.md), or use the interactive [Configuration Explorer](configuration-explorer.mdx) to search the options and build a `config.json`. This guide adds examples, file locations, and platform notes on top of those.
+:::
+
 {/* toc */}
 
 ## Table of Contents
@@ -15,6 +19,7 @@ This document details all available configuration options for the Teams for Linu
   - [Tray Icon](#tray-icon)
   - [Notification System](#notification-system)
   - [Incoming Call Handling](#incoming-call-handling)
+  - [Downloads](#downloads)
   - [Idle & Activity Detection](#idle--activity-detection)
   - [Authentication & SSO](#authentication--sso)
   - [Network & Proxy](#network--proxy)
@@ -85,6 +90,7 @@ Place your `config.json` file in the appropriate location based on your installa
 | `frame` | `boolean` | `true` | Specify false to create a Frameless Window |
 | `menubar` | `string` | `"auto"` | Menu bar behaviour. Choices: `auto`, `visible`, `hidden` |
 | `minimized` | `boolean` | `false` | Start the application minimized |
+| `minimizeOnClose` | `boolean` | `false` | Minimize the window when clicking the close (X) cross instead of hiding it to the tray (ignored when `closeAppOnCross` is true) |
 | `closeAppOnCross` | `boolean` | `false` | Close the app when clicking the close (X) cross |
 | `alwaysOnTop` | `boolean` | `true` | Keep the pop-out window always on top of other windows |
 | `class` | `string` | `null` | Custom value for the WM_CLASS property |
@@ -95,7 +101,7 @@ Place your `config.json` file in the appropriate location based on your installa
 |--------|------|---------|-------------|
 | `customCSSName` | `string` | `""` | Custom CSS name. Options: "compactDark", "compactLight", "tweaks", "condensedDark", "condensedLight" |
 | `customCSSLocation` | `string` | `""` | Custom CSS styles file location |
-| `followSystemTheme` | `boolean` | `false` | Follow system theme |
+| `followSystemTheme` | `boolean` | `true` | Follow the operating-system dark/light theme preference. Set `false` to keep Teams's own theme regardless of OS changes. |
 
 ### Tray Icon
 
@@ -118,6 +124,7 @@ Place your `config.json` file in the appropriate location based on your installa
 | `notificationMethod` | `string` | `"web"` | Notification method. Choices: `web`, `electron`, `custom` |
 | `customNotification` | `object` | `{ toastDuration: 5000 }` | Configuration for custom in-app toast notifications (used when `notificationMethod` is `custom`) |
 | `defaultNotificationUrgency` | `string` | `"normal"` | Default urgency for new notifications. Choices: `low`, `normal`, `critical` |
+| `notifications.timeoutType` | `string` | `"default"` | How long notifications stay in the system notification center (Linux/Windows only). Choices: `default` (auto-clear per system policy) or `never` (persist until the user dismisses, useful on GNOME and other desktops that auto-remove notifications). Mirrors Electron's Notification `timeoutType`. May not be honoured by every notification daemon. |
 
 ### Incoming Call Handling
 
@@ -129,6 +136,15 @@ Place your `config.json` file in the appropriate location based on your installa
 
 > [!NOTE]
 > See [Incoming Call Command](#incoming-call-command) for detailed usage examples.
+
+### Downloads
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `download.enabled` | `boolean` | `false` | Master switch for the download feedback feature. Opt-in while in early development; set to `true` to enable the manager. The sub-flags only take effect when `enabled` is `true`. |
+| `download.notifyOnDownloadComplete` | `boolean` | `true` | Show a system notification when a file download finishes (click opens the containing folder). Set to `false` to suppress. |
+| `download.showProgressBar` | `boolean` | `true` | Drive in-flight feedback through `BrowserWindow.setProgressBar` (macOS / Windows; effectively no-op on Linux), a `com.canonical.Unity.LauncherEntry` D-Bus broadcast that Ubuntu Dock and Dash-to-Dock subscribe to (GNOME / Ubuntu users), and an `org.kde.JobViewServer` per-download view rendered in KDE Plasma's notification widget. The window-title prefix is a separate sub-flag (`showTitlePrefix`). |
+| `download.showTitlePrefix` | `boolean` | `true` | Also prefix the main window title with `[34%]` (or `[downloading]`) while a download is in flight. Every WM/DE renders the window title in its taskbar tooltip / Alt-Tab, so this is a portable fallback for environments where the other channels are unavailable. Set to `false` on KDE / Ubuntu where the JobView / LauncherEntry already shows progress and the title churn is redundant. |
 
 ### Idle & Activity Detection
 
@@ -208,7 +224,7 @@ InTune SSO uses a nested `auth.intune` configuration:
 | `auth.intune.enabled` | `boolean` | `false` | Enable Single-Sign-On using Microsoft InTune |
 | `auth.intune.user` | `string` | `""` | User (e-mail) to use for InTune SSO |
 
-**Legacy Options (Deprecated):**
+**Removed Options (migrate before upgrading):**
 
 | Old Option | New Option | Notes |
 |------------|------------|-------|
@@ -238,6 +254,7 @@ Requires the `fido2-tools` system package: `sudo apt install fido2-tools` (Debia
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `auth.webauthn.enabled` | `boolean` | `false` | Enable FIDO2 hardware security key support for WebAuthn authentication on Linux |
+| `auth.webauthn.debug` | `boolean` | `false` | Enable verbose WebAuthn diagnostic logging (useful for beta testers troubleshooting key registration) |
 
 #### Certificates
 
@@ -248,7 +265,7 @@ Requires the `fido2-tools` system package: `sudo apt install fido2-tools` (Debia
 
 ### Multi-Account Profile Switcher (Experimental)
 
-> **Status:** Phase 1 MVP scaffolding. The flag is wired through config, but the switcher UI, profile CRUD, and session isolation plumbing land in follow-up PRs tracked in [ADR-020](development/adr/020-multi-account-profile-switcher). Enabling the flag today has no user-visible effect beyond the Intune mutex check described below.
+> **Status:** Phase 1 partially shipped. With the flag enabled you get a **Profiles** menu (Add / Switch / Manage / Remove profiles), first-run migration of your existing session into a default "My account" profile, and per-profile session isolation — each profile runs against its own `persist:teams-profile-{uuid}` partition so cookies, tokens, and storage never cross tenants. Still in progress: the top-right dropdown switcher overlay and `Ctrl+Shift+1…5` shortcuts for pinned profiles. See [ADR-020](development/adr/020-multi-account-profile-switcher) for the full design and remaining phases.
 
 Opt-in configuration for the single-window multi-tenant account switcher:
 
@@ -264,7 +281,7 @@ Opt-in configuration for the single-window multi-tenant account switcher:
 |--------|------|---------|-------------|
 | `multiAccount.enabled` | `boolean` | `false` | Opt-in flag for the multi-account profile switcher. See [ADR-020](development/adr/020-multi-account-profile-switcher) for the full design. |
 
-**Mutual exclusion with Intune SSO:** If `multiAccount.enabled` is `true` at startup and Intune SSO is enabled via either `auth.intune.enabled` or the legacy `ssoInTuneEnabled` flag, the app logs a warning, appends it to `config.warnings`, and disables multi-account for the session. The Linux D-Bus Microsoft Identity Broker has undocumented behavior around concurrent enrollments for different UPNs on one machine, so Phase 1 treats Intune as single-profile-only. Users who need both can track follow-up discussion on the ADR.
+**Mutual exclusion with Intune SSO:** If `multiAccount.enabled` is `true` at startup and `auth.intune.enabled` is also `true`, the app logs a warning, appends it to `config.warnings`, and disables multi-account for the session. The Linux D-Bus Microsoft Identity Broker has undocumented behavior around concurrent enrollments for different UPNs on one machine, so Phase 1 treats Intune as single-profile-only. Users who need both can track follow-up discussion on the ADR.
 
 ### Network & Proxy
 
@@ -272,6 +289,7 @@ Opt-in configuration for the single-window multi-tenant account switcher:
 |--------|------|---------|-------------|
 | `proxyServer` | `string` | `null` | Proxy Server with format address:port |
 | `network.webRTCIPHandlingPolicy` | `string` | `null` | Controls which network interfaces WebRTC uses for ICE candidate gathering. Choices: `default`, `default_public_and_private_interfaces`, `default_public_interface_only`, `disable_non_proxied_udp` |
+| `network.disableQuic` | `boolean` | `true` | Append Chromium's `--disable-quic` switch at startup. Defaults to `true` to work around issue [#2518](https://github.com/IsmaelMartinez/teams-for-linux/issues/2518) (concurrent SharePoint downloads abort with `ERR_QUIC_PROTOCOL_ERROR` on the shared QUIC session). Set to `false` to re-enable QUIC if a future Chromium release fixes the underlying transport bug. |
 
 *   `default` - Exposes user's public and local IPs. This is the default behavior. When this policy is used, WebRTC has the right to enumerate all interfaces and bind them to discover public interfaces.
 
@@ -281,8 +299,9 @@ Opt-in configuration for the single-window multi-tenant account switcher:
 
 *   `disable_non_proxied_udp` - Does not expose public or local IPs. When this policy is used, WebRTC should only use TCP to contact peers or servers unless the proxy server supports UDP.
 
-[!NOTE]
+:::note
 **`network.webRTCIPHandlingPolicy`** is useful on systems with multiple network interfaces (e.g. WiFi for internet and a secondary Ethernet adapter with no internet gateway). Without this option, WebRTC advertises all interfaces as ICE candidates, which can cause asymmetric STUN routing and drop calls to **OnHold**. Setting it to `default_public_interface_only` restricts ICE gathering to the interface holding the default route only.
+:::
 
 ```json
 "network": {
@@ -312,7 +331,7 @@ Screen sharing settings are organized under the `screenSharing` configuration ob
 | `screenSharing.thumbnail.alwaysOnTop` | `boolean` | `true` | Keep thumbnail window always on top |
 | `screenSharing.lockInhibitionMethod` | `string` | `"Electron"` | Screen lock inhibition method. Choices: `Electron`, `WakeLockSentinel` |
 
-**Legacy Options (Deprecated):**
+**Removed Options (migrate before upgrading):**
 
 | Old Option | New Option | Notes |
 |------------|------------|-------|
@@ -354,7 +373,7 @@ Media settings are organized under the `media` configuration object with subgrou
 }
 ```
 
-**Legacy Options (Deprecated):**
+**Removed Options (migrate before upgrading):**
 
 | Old Option | New Option | Notes |
 |------------|------------|-------|
@@ -373,13 +392,26 @@ Media settings are organized under the `media` configuration object with subgrou
 | `customBGServiceBaseUrl` | `string` | `"http://localhost"` | Base URL of the server which provides custom background images |
 | `customBGServiceConfigFetchInterval` | `number` | `0` | Poll interval in seconds to download background service config |
 
+### Custom Stickers
+
+A floating sticker panel that lists image files from a local folder and pastes the selected one into the focused chat compose box. Off by default. See [`app/customStickers/README.md`](https://github.com/IsmaelMartinez/teams-for-linux/blob/main/app/customStickers/README.md) for details.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `customStickers.enabled` | `boolean` | `false` | Master flag for the custom stickers feature |
+| `customStickers.folder` | `string` | `""` | Absolute path to the sticker folder. Empty string uses `<userData>/stickers/`, which is created on first run if missing |
+| `customStickers.formats` | `array` | `["png", "jpg", "jpeg", "gif", "webp"]` | File extensions the scanner accepts (lowercase, no leading dot). The scanner reads the configured folder plus one level of subdirectories, so stickers organised under `<folder>/<group>/` are visible. |
+| `customStickers.urlImport.enabled` | `boolean` | `true` | Allow importing stickers from HTTPS URLs via the panel header input or by dropping a URL on the panel |
+| `customStickers.urlImport.allowedContentTypes` | `array` | `["image/png", "image/jpeg", "image/gif", "image/webp"]` | Response content-types the wrapper will accept and save when importing from a URL |
+| `customStickers.urlImport.maxBytes` | `number` | `5242880` | Per-file size cap (in bytes) for URL imports. Responses larger than this are rejected |
+
 ### URL & Protocol Handling
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `defaultURLHandler` | `string` | `""` | Default application to open HTTP URLs |
 | `meetupJoinRegEx` | `string` | `^https://teams\\.(?:microsoft\\.com|live\\.com|cloud\\.microsoft)/(v2/\\?meetingjoin=|meet/|l/(?:app|call|channel|chat|entity|file|meet(?:ing|up-join)|message|task|team)/)` | Regex for Teams meetup-join and related links |
-| `msTeamsProtocols` | `object` | `{ v1: "^msteams:\/l\/(?:meetup-join\|channel\|chat\|message)", v2: "^msteams:\/\/teams\.microsoft\.com\/l\/(?:meetup-join\|channel\|chat\|message)" }` | Regular expressions for Microsoft Teams protocol links |
+| `msTeamsProtocols` | `object` | `{ v1: "^msteams:/(?:meet/\|l/(?:app\|call\|channel\|chat\|entity\|file\|meet(?:ing\|up-join)\|message\|task\|team)/)", v2: "^msteams://teams\\.(?:microsoft\\.com\|live\\.com\|cloud\\.microsoft)/(?:meet/\|l/(?:app\|call\|channel\|chat\|entity\|file\|meet(?:ing\|up-join)\|message\|task\|team)/)" }` | Regular expressions for Microsoft Teams protocol links (v1 = legacy `msteams:` scheme, v2 = host-based `msteams://` scheme) |
 | `onNewWindowOpenMeetupJoinUrlInApp` | `boolean` | `true` | Open meetupJoinRegEx URLs in the app instead of default browser |
 
 ### Keyboard Shortcuts
@@ -402,6 +434,9 @@ Media settings are organized under the `media` configuration object with subgrou
 | `mqtt.statusTopic` | `string` | `"status"` | Topic name for status messages (outbound, combined with topicPrefix) |
 | `mqtt.commandTopic` | `string` | `""` | Topic name for receiving commands (inbound). Leave empty to disable (status-only mode). Set to `"command"` to enable bidirectional mode. |
 | `mqtt.statusCheckInterval` | `number` | `10000` | Polling interval in milliseconds for status detection fallback |
+| `mqtt.homeAssistant.enabled` | `boolean` | `false` | Enable Home Assistant MQTT auto-discovery (publishes discovery configs so HA creates entities automatically) |
+| `mqtt.homeAssistant.discoveryPrefix` | `string` | `"homeassistant"` | MQTT discovery topic prefix used by Home Assistant |
+| `mqtt.homeAssistant.deviceName` | `string` | `"Teams for Linux"` | Device name shown in Home Assistant |
 
 **Example MQTT Configuration:**
 ```json
@@ -412,10 +447,15 @@ Media settings are organized under the `media` configuration object with subgrou
     "username": "teams-user",
     "password": "secret",
     "clientId": "teams-for-linux",
-    "topicPrefix": "home/office",
-    "statusTopic": "teams/status",
-    "commandTopic": "teams/command",
-    "statusCheckInterval": 10000
+    "topicPrefix": "teams",
+    "statusTopic": "status",
+    "commandTopic": "command",
+    "statusCheckInterval": 10000,
+    "homeAssistant": {
+      "enabled": true,
+      "discoveryPrefix": "homeassistant",
+      "deviceName": "Teams for Linux"
+    }
   }
 }
 ```
@@ -427,10 +467,11 @@ When MQTT is enabled, the following topics are automatically published:
 | Topic | Payload | Description |
 |-------|---------|-------------|
 | `\{topicPrefix\}/connected` | `"true"` or `"false"` | App connection state (uses MQTT Last Will) |
-| `\{topicPrefix\}/status` | JSON object | User presence status (Available, Busy, DND, Away, BRB) |
+| `\{topicPrefix\}/\{statusTopic\}` | JSON object | User presence status (Available, Busy, DND, Away, BRB) |
 | `\{topicPrefix\}/in-call` | `"true"` or `"false"` | Active call state (connected/disconnected). Uses WebRTC fallback for reliable detection even from popup windows. |
-| `\{topicPrefix\}/camera` | `"true"` or `"false"` | Camera on/off state (Phase 2) |
-| `\{topicPrefix\}/microphone` | `"true"` or `"false"` | Microphone on/off state (Phase 2) |
+| `\{topicPrefix\}/camera` | `"true"` or `"false"` | Camera on/off state (monitors video sender track via WebRTC, filters out screen-sharing tracks) |
+| `\{topicPrefix\}/microphone` | `"speaking"` \| `"silent"` \| `"muted"` \| `"off"` | Microphone state derived from the WebRTC speaking-indicator. `speaking` = audio is being transmitted, `silent` = mic open but quiet, `muted` = Teams has zeroed the audio signal, `off` = not in a call. Activates when `mqtt.enabled` is true (no separate toggle required). |
+| `\{topicPrefix\}/incoming-call` | `"true"` or `"false"` | Incoming call ringing state. Fires before user accepts. Parity with `incomingCallCommand`. Covers 1:1 ring-type calls. |
 | `\{topicPrefix\}/screen-sharing` | `"true"` or `"false"` | Screen sharing active state |
 
 All topics use retained messages by default, ensuring subscribers receive the last known state immediately upon connecting.
@@ -706,7 +747,7 @@ The configuration file can include Electron CLI flags that will be added when th
 > For options that require a value, provide them as an array where the first element is the flag and the second is its value. If no value is needed, you can use a simple string.
 
 > [!WARNING]
-> The `ozone-platform` flag **cannot** be set via `electronCLIFlags` because it must be applied before the Electron process starts (before any JavaScript executes). The default is `--ozone-platform=auto`, which lets Chromium pick the backend based on the session. To force a specific backend, pass `--ozone-platform=x11` or `--ozone-platform=wayland` as a command-line argument when launching the app, or edit the `Exec=` line in your `.desktop` file. See [Troubleshooting: Wayland / Display Issues](troubleshooting.md#wayland--display-issues) for details.
+> The `ozone-platform` flag **cannot** be set via `electronCLIFlags` because it must be applied before the Electron process starts (before any JavaScript executes). The current default is `--ozone-platform=x11` on all Linux packaging formats. To force a different backend, pass `--ozone-platform=wayland` as a command-line argument when launching the app, or edit the `Exec=` line in your `.desktop` file. See [Troubleshooting: Wayland / Display Issues](troubleshooting.md#wayland--display-issues) for details.
 
 #### Custom Feature Flags (enable-features / disable-features)
 

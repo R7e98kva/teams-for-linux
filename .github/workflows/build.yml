@@ -25,10 +25,10 @@ jobs:
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install Node.js and NPM
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 24
 
@@ -37,6 +37,15 @@ jobs:
 
       - name: Run linter
         run: npm run lint
+
+      - name: Check config docs are in sync
+        run: |
+          npm run generate-config-docs
+          if ! git diff --quiet -- docs-site/docs/configuration-generated.md docs-site/static/config-schema.json; then
+            echo "::error::Generated config docs are out of sync with app/config/options.js. Run 'npm run generate-config-docs' and commit the result."
+            git diff -- docs-site/docs/configuration-generated.md docs-site/static/config-schema.json
+            exit 1
+          fi
 
       - name: Audit dependencies
         run: npm audit --audit-level=critical
@@ -48,15 +57,48 @@ jobs:
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install Node.js and NPM
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 24
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Install Electron binary
+        # Electron's bundled extract-zip deterministically unpacks only one
+        # file from the (complete, checksum-verified) zip in the current CI
+        # image, leaving dist with no binary and no path.txt, which breaks
+        # electron.launch() in the e2e tests. Download via @electron/get as
+        # usual, then extract the cached zip with the system unzip — an
+        # independent extractor — and write path.txt ourselves.
+        env:
+          DEBUG: "@electron/get:*"
+        run: |
+          set -euo pipefail
+          rm -rf node_modules/electron/dist node_modules/electron/path.txt "$HOME/.cache/electron"
+          # Populate the (checksum-verified) zip in the cache. The bundled
+          # extraction fails here, so ignore its exit status.
+          force_no_cache=true node node_modules/electron/install.js || true
+          zip=$(find "$HOME/.cache/electron" -name 'electron-*.zip' | head -1)
+          if [ -z "$zip" ]; then
+            echo "::error::Electron zip was not downloaded"
+            exit 1
+          fi
+          echo "Extracting $(stat -c%s "$zip") bytes from $zip"
+          rm -rf node_modules/electron/dist
+          mkdir -p node_modules/electron/dist
+          unzip -q -o "$zip" -d node_modules/electron/dist
+          chmod +x node_modules/electron/dist/electron
+          printf electron > node_modules/electron/path.txt
+          if [ ! -x node_modules/electron/dist/electron ]; then
+            echo "::error::Electron binary missing after unzip"
+            ls -laR node_modules/electron/dist | head -40
+            exit 1
+          fi
+          echo "OK: electron binary installed ($(stat -c%s node_modules/electron/dist/electron) bytes)"
 
       - name: Run unit tests
         run: npm run test:unit
@@ -69,7 +111,7 @@ jobs:
 
       - name: Upload Playwright test results
         if: failure()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-test-results
           path: test-results/
@@ -83,10 +125,10 @@ jobs:
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install Node.js and NPM
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 24
 
@@ -106,7 +148,7 @@ jobs:
 
       - name: Upload PR artifacts
         if: github.ref != 'refs/heads/main'
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: teams-for-linux-linux-x64
           path: |
@@ -125,10 +167,10 @@ jobs:
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install Node.js and NPM
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 24
 
@@ -148,7 +190,7 @@ jobs:
 
       - name: Upload PR artifacts
         if: github.ref != 'refs/heads/main'
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: teams-for-linux-linux-arm64
           path: |
@@ -167,10 +209,10 @@ jobs:
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install Node.js and NPM
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 24
 
@@ -190,7 +232,7 @@ jobs:
 
       - name: Upload PR artifacts
         if: github.ref != 'refs/heads/main'
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: teams-for-linux-linux-armv7l
           path: |
@@ -209,10 +251,10 @@ jobs:
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install Node.js and NPM
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 24
 
@@ -232,7 +274,7 @@ jobs:
 
       - name: Upload PR artifacts
         if: github.ref != 'refs/heads/main'
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: teams-for-linux-macos-x64
           path: dist/*.dmg
@@ -247,10 +289,10 @@ jobs:
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install Node.js and NPM
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 24
 
@@ -270,7 +312,7 @@ jobs:
 
       - name: Upload PR artifacts
         if: github.ref != 'refs/heads/main'
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: teams-for-linux-windows-x64
           path: dist/*.exe

@@ -1,13 +1,13 @@
 # MQTT Extended Status Investigation (Issue #1938)
 
-:::info Phase 1 Shipped — Phase 2 Microphone in Flight, Camera Deferred
-Infrastructure, LWT, and call state publishing shipped in Phase 1. Phase 2 microphone topic is implemented in [PR #2497](https://github.com/IsmaelMartinez/teams-for-linux/pull/2497) (driven by speaking-indicator audioLevel, see `mqtt-microphone-state-research.md`). Phase 2 camera state is still deferred pending validation of the `track.enabled` polling approach.
+:::info All Phases Shipped
+Phase 1 infrastructure (LWT, call state, screen-sharing), Phase 2 microphone ([PR #2497](https://github.com/IsmaelMartinez/teams-for-linux/pull/2497)), Phase 2 camera ([PR #2582](https://github.com/IsmaelMartinez/teams-for-linux/pull/2582)), and Home Assistant auto-discovery ([PR #2464](https://github.com/IsmaelMartinez/teams-for-linux/pull/2464), [PR #2571](https://github.com/IsmaelMartinez/teams-for-linux/pull/2571)) are all shipped.
 :::
 
 **Date**: 2025-11-12
-**Updated**: 2026-05-06
+**Updated**: 2026-05-26
 **Issue**: [#1938 - Extended MQTT Status Fields](https://github.com/IsmaelMartinez/teams-for-linux/issues/1938)
-**Status**: Phase 1 Complete | Phase 2 Microphone in PR #2497 | Phase 2 Camera deferred
+**Status**: All phases shipped (Phase 1, Phase 2 Microphone, Phase 2 Camera, HA Discovery)
 
 ## User Request
 
@@ -158,7 +158,7 @@ Topics using existing `topicPrefix`:
 
 - `\{topicPrefix\}/connected` → `"true"` or `"false"` (uses MQTT LWT)
 - `\{topicPrefix\}/camera` → `"true"` or `"false"` (Phase 2, pending)
-- `\{topicPrefix\}/microphone` → `"speaking"`, `"silent"`, `"muted"` or `"off"` (Phase 2, pending, schema from [`mqtt-microphone-state-research.md`](./mqtt-microphone-state-research.md))
+- `\{topicPrefix\}/microphone` → `"speaking"`, `"silent"`, `"muted"` or `"off"` (Phase 2, shipped in [PR #2497](https://github.com/IsmaelMartinez/teams-for-linux/pull/2497))
 - `\{topicPrefix\}/in-call` → `"true"` or `"false"`
 - `\{topicPrefix\}/screen-sharing` → `"true"` or `"false"`
 
@@ -331,14 +331,14 @@ async publish(topic, payload, options = {}) {
 
 Phase 1 provides call state (`in-call`), connection state (`connected`) and screen-sharing state via existing IPC events. Phase 2 adds camera and microphone state monitoring.
 
-**Course correction (2026-03 → 2026-04):** The original plan used `getUserMedia` interception with `track.enabled` polling for both camera and mic. A first attempt on 2026-03-09 sent `microphone-state-changed` via that path but was stripped out the following day because `track.enabled` did not reflect Teams' mute state reliably. The microphone side has since been solved differently by the speaking indicator (PR #2299), which uses `RTCPeerConnection.getStats()` and the `media-source.audioLevel` stat. Teams zeros that stat to exactly 0.0 on mute, giving unambiguous three-state detection (speaking / silent / muted). The follow-up research for wiring that into MQTT lives in [`mqtt-microphone-state-research.md`](./mqtt-microphone-state-research.md).
+**Course correction (2026-03 → 2026-04):** The original plan used `getUserMedia` interception with `track.enabled` polling for both camera and mic. A first attempt on 2026-03-09 sent `microphone-state-changed` via that path but was stripped out the following day because `track.enabled` did not reflect Teams' mute state reliably. The microphone side has since been solved differently by the speaking indicator (PR #2299), which uses `RTCPeerConnection.getStats()` and the `media-source.audioLevel` stat. Teams zeros that stat to exactly 0.0 on mute, giving unambiguous three-state detection (speaking / silent / muted). The follow-up work for wiring that into MQTT shipped in [PR #2497](https://github.com/IsmaelMartinez/teams-for-linux/pull/2497).
 
 The camera side still needs `getUserMedia` + `track.enabled` polling since there is no WebRTC stat equivalent for "camera off", and that approach has not been validated for camera specifically. Needs a short proof-of-concept before wiring to MQTT.
 
 **Scoped work:**
 
 Microphone (high confidence, research complete):
-- [ ] Wire `app/browser/tools/speakingIndicator.js` to emit `microphone-state-changed` on state transitions. Plan in [`mqtt-microphone-state-research.md`](./mqtt-microphone-state-research.md). Published values are `speaking`, `silent`, `muted`, `off` (four-state, not boolean).
+- [x] Wire `app/browser/tools/speakingIndicator.js` to emit `microphone-state-changed` on state transitions. Shipped in [PR #2497](https://github.com/IsmaelMartinez/teams-for-linux/pull/2497). Published values are `speaking`, `silent`, `muted`, `off` (four-state, not boolean).
 - [x] `mqtt.enabled` force-activates the speaking indicator's WebRTC monitoring even when the visual overlay is off (shipped in PR #2406, see `app/browser/tools/speakingIndicator.js:50-56`).
 
 Camera (medium confidence, needs validation):

@@ -16,6 +16,7 @@ const sidebars: SidebarsConfig = {
   // Teams for Linux documentation sidebar
   docsSidebar: [
     'index',
+    'quick-reference',
     {
       type: 'category',
       label: 'Getting Started',
@@ -23,6 +24,8 @@ const sidebars: SidebarsConfig = {
         'installation',
         'uninstall',
         'configuration',
+        'configuration-generated',
+        'configuration-explorer',
         'multiple-instances',
         'intune-sso',
       ],
@@ -92,11 +95,11 @@ const sidebars: SidebarsConfig = {
           items: [
             'development/research/README',
             'development/research/configuration-organization-research',
+            'development/research/documentation-and-config-ux-research',
             'development/research/custom-notification-system-research',
             'development/research/graph-api-integration-research',
             'development/research/join-meeting-window-takeover-research',
             'development/research/mqtt-extended-status-investigation',
-            'development/research/mqtt-microphone-state-research',
             'development/research/project-management-tools-research',
             'development/research/system-performance-research',
             'development/research/webauthn-fido2-implementation-plan',

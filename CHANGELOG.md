@@ -1,5 +1,129 @@
 # Changelog
 
+## [2.11.1](https://github.com/IsmaelMartinez/teams-for-linux/compare/v2.11.0...v2.11.1) (2026-05-29)
+
+
+### CI/CD
+
+* bump checkout to Node 24 and make e2e non-blocking for packaging ([#2595](https://github.com/IsmaelMartinez/teams-for-linux/issues/2595)) ([93b560d](https://github.com/IsmaelMartinez/teams-for-linux/commit/93b560d81ae487a1ea7dc138f6ed68a51ee244cd))
+
+## [2.11.0](https://github.com/IsmaelMartinez/teams-for-linux/compare/v2.10.0...v2.11.0) (2026-05-27)
+
+
+### Features
+
+* **#2476:** custom stickers MVP ([#2550](https://github.com/IsmaelMartinez/teams-for-linux/issues/2550)) ([0c31282](https://github.com/IsmaelMartinez/teams-for-linux/commit/0c31282151255d89a1f62e9652a782ac5c80c6c4))
+* **config:** default followSystemTheme to true ([#2566](https://github.com/IsmaelMartinez/teams-for-linux/issues/2566)) ([21e927e](https://github.com/IsmaelMartinez/teams-for-linux/commit/21e927e6464762b70ffe014bb809fa5bbacb7d5e))
+* **mqtt:** emit camera-state-changed from renderer for MQTT publishing ([#2582](https://github.com/IsmaelMartinez/teams-for-linux/issues/2582)) ([182d559](https://github.com/IsmaelMartinez/teams-for-linux/commit/182d559de29104af74cc3a66d8d62a41b187ac97))
+* **mqtt:** publish incoming-call topic for ring/invite events ([#2572](https://github.com/IsmaelMartinez/teams-for-linux/issues/2572)) ([d7cdd06](https://github.com/IsmaelMartinez/teams-for-linux/commit/d7cdd06092dc2fd0345a2e1fdb191eeb5e821eb6))
+* **mqtt:** publish microphone state to {topicPrefix}/microphone ([#2497](https://github.com/IsmaelMartinez/teams-for-linux/issues/2497)) ([e8fe6f3](https://github.com/IsmaelMartinez/teams-for-linux/commit/e8fe6f3104d24a14e46d87bb792cfbeab76cc942))
+
+
+### Bug Fixes
+
+* **#2383:** also setDesktopName so --class reaches X11 + Wayland ([#2569](https://github.com/IsmaelMartinez/teams-for-linux/issues/2569)) ([a048527](https://github.com/IsmaelMartinez/teams-for-linux/commit/a048527bde6f5529ee35ec2f04209e1e0c4f4d75))
+* **#2534:** route getDisplayMedia through in-app picker on Wayland ([f38f28e](https://github.com/IsmaelMartinez/teams-for-linux/commit/f38f28ef81d9c33dd4cbf4d838f9ec940205d311)), closes [#2534](https://github.com/IsmaelMartinez/teams-for-linux/issues/2534)
+* **deps:** bump qs and ws in docs-site to resolve security alerts ([#2573](https://github.com/IsmaelMartinez/teams-for-linux/issues/2573)) ([84aefe8](https://github.com/IsmaelMartinez/teams-for-linux/commit/84aefe84e094bbce8a3124650f23d7f77f7ba5bf))
+* **logging:** down-level pre-login auth-noise from renderer ([#2564](https://github.com/IsmaelMartinez/teams-for-linux/issues/2564)) ([8de3b2d](https://github.com/IsmaelMartinez/teams-for-linux/commit/8de3b2d6a1a4842882dca6c99ec33928ad2309ee)), closes [#2560](https://github.com/IsmaelMartinez/teams-for-linux/issues/2560)
+* **logging:** run renderer log fields through full PII sanitizer ([#2562](https://github.com/IsmaelMartinez/teams-for-linux/issues/2562)) ([bff6d22](https://github.com/IsmaelMartinez/teams-for-linux/commit/bff6d22ace2a37195fb3a98ccf5a88d6f2efb98e)), closes [#2560](https://github.com/IsmaelMartinez/teams-for-linux/issues/2560)
+* **macos:** use 256x256 source for the dock icon ([#2563](https://github.com/IsmaelMartinez/teams-for-linux/issues/2563)) ([8f96c66](https://github.com/IsmaelMartinez/teams-for-linux/commit/8f96c6684445c541241de3ad6dd411736af691f8)), closes [#2560](https://github.com/IsmaelMartinez/teams-for-linux/issues/2560)
+* **preload:** serialize object-shaped unhandled rejections ([#2561](https://github.com/IsmaelMartinez/teams-for-linux/issues/2561)) ([6720768](https://github.com/IsmaelMartinez/teams-for-linux/commit/6720768f1ac57c766eeda8595a177f8b0838259e)), closes [#2560](https://github.com/IsmaelMartinez/teams-for-linux/issues/2560)
+
+
+### Code Improvements
+
+* **config:** remove six deprecated config keys ([#2567](https://github.com/IsmaelMartinez/teams-for-linux/issues/2567)) ([4710fb5](https://github.com/IsmaelMartinez/teams-for-linux/commit/4710fb53436b32b178301e3d2108fc2e66ea0c49))
+
+
+### Documentation
+
+* add vylen linux install/remove instruction ([#2559](https://github.com/IsmaelMartinez/teams-for-linux/issues/2559)) ([2f6c976](https://github.com/IsmaelMartinez/teams-for-linux/commit/2f6c97661d1f0b193de1fc425940c8de5b5656b5))
+* documentation cleanup and HA discovery docs ([#2575](https://github.com/IsmaelMartinez/teams-for-linux/issues/2575)) ([6eca43c](https://github.com/IsmaelMartinez/teams-for-linux/commit/6eca43cfeca0dddf16062340641f6499aab4afdf))
+* update camera topic and MQTT status to shipped ([#2585](https://github.com/IsmaelMartinez/teams-for-linux/issues/2585)) ([b564e87](https://github.com/IsmaelMartinez/teams-for-linux/commit/b564e875a12567934b21b22cd55d2889a6638c55))
+
+
+### Maintenance
+
+* **deps-dev:** bump electron from 41.6.1 to 41.7.1 ([#2583](https://github.com/IsmaelMartinez/teams-for-linux/issues/2583)) ([79e9540](https://github.com/IsmaelMartinez/teams-for-linux/commit/79e9540bf9dd119b37d7412071a88fee072b5f8a))
+* **deps-dev:** bump qs from 6.14.2 to 6.15.2 ([#2568](https://github.com/IsmaelMartinez/teams-for-linux/issues/2568)) ([a5c0e89](https://github.com/IsmaelMartinez/teams-for-linux/commit/a5c0e89fb286cf9d5c4c0a98afadca93ebb8ea19))
+* **deps-dev:** bump tmp from 0.2.5 to 0.2.6 ([#2584](https://github.com/IsmaelMartinez/teams-for-linux/issues/2584)) ([0f3c5ce](https://github.com/IsmaelMartinez/teams-for-linux/commit/0f3c5ce4c1c9293d854f0e66044db493fed59c3a))
+* **deps:** bump @homebridge/dbus-native in the minor-and-patch group ([#2574](https://github.com/IsmaelMartinez/teams-for-linux/issues/2574)) ([345dc5e](https://github.com/IsmaelMartinez/teams-for-linux/commit/345dc5e752447799bc26a20bf7bfaf121149396e))
+* remove shipped mqtt-microphone-state-research doc ([#2581](https://github.com/IsmaelMartinez/teams-for-linux/issues/2581)) ([f4c39ed](https://github.com/IsmaelMartinez/teams-for-linux/commit/f4c39edde3f14433fccdc1dfa7cc6b1e30ce75e7))
+* remove simili-bot trial files ([#2586](https://github.com/IsmaelMartinez/teams-for-linux/issues/2586)) ([15613cf](https://github.com/IsmaelMartinez/teams-for-linux/commit/15613cf44a97d1e726f9bd6dee31970c4df0aada))
+* update CLAUDE.md for ready → release ready label rename ([#2576](https://github.com/IsmaelMartinez/teams-for-linux/issues/2576)) ([62ff340](https://github.com/IsmaelMartinez/teams-for-linux/commit/62ff340c41695fc3fd1e09a5c33463174667c33e))
+
+### Thanks
+
+Big thanks to @app/dependabot, @CelestifyX for contributing to this release.
+
+## [2.10.0](https://github.com/IsmaelMartinez/teams-for-linux/compare/v2.9.0...v2.10.0) (2026-05-19)
+
+
+### Features
+
+* **downloads:** drive taskbar progress bar during downloads ([#2512](https://github.com/IsmaelMartinez/teams-for-linux/issues/2512)) ([#2514](https://github.com/IsmaelMartinez/teams-for-linux/issues/2514)) ([146a736](https://github.com/IsmaelMartinez/teams-for-linux/commit/146a73623dfbc3ddf6b78644ee754767afa05eb1))
+* **downloads:** notify on download completion ([#2512](https://github.com/IsmaelMartinez/teams-for-linux/issues/2512)) ([#2513](https://github.com/IsmaelMartinez/teams-for-linux/issues/2513)) ([a6c89e8](https://github.com/IsmaelMartinez/teams-for-linux/commit/a6c89e822c5bd1d0534cf6c020eb0a6539ec44ad))
+* **multi-account:** Manage-profiles dialog with rename + remove ([#2510](https://github.com/IsmaelMartinez/teams-for-linux/issues/2510)) ([23e1e13](https://github.com/IsmaelMartinez/teams-for-linux/commit/23e1e137d3296b163832530a52a17ad3a7c21b28))
+* **notifications:** add notifications.timeoutType opt-in ([#2521](https://github.com/IsmaelMartinez/teams-for-linux/issues/2521)) ([503a5b9](https://github.com/IsmaelMartinez/teams-for-linux/commit/503a5b9149931cb8b272b7617bf57c2d98369fad))
+* **screenSharing:** full-window picker overlay with detail panel ([#2524](https://github.com/IsmaelMartinez/teams-for-linux/issues/2524)) ([#2543](https://github.com/IsmaelMartinez/teams-for-linux/issues/2543)) ([b04ed4c](https://github.com/IsmaelMartinez/teams-for-linux/commit/b04ed4c65318d106475101012e6ce6d2d329a7d9))
+* **triage-bot:** seed .github/hats.md taxonomy ([#2548](https://github.com/IsmaelMartinez/teams-for-linux/issues/2548)) ([46d1688](https://github.com/IsmaelMartinez/teams-for-linux/commit/46d1688255d9278d084ba165cbcb8496f3a65bd9))
+* **webauthn:** FIDO2 hardware security key support for Linux ([#802](https://github.com/IsmaelMartinez/teams-for-linux/issues/802)) ([#2357](https://github.com/IsmaelMartinez/teams-for-linux/issues/2357)) ([6c7664f](https://github.com/IsmaelMartinez/teams-for-linux/commit/6c7664fa5fc7a952db2d2111e1bccb45126e24be))
+
+
+### Bug Fixes
+
+* **auth:** cover MCAS proxy suffix in cookie-domain matching ([#2488](https://github.com/IsmaelMartinez/teams-for-linux/issues/2488)) ([78a1140](https://github.com/IsmaelMartinez/teams-for-linux/commit/78a114066630c1b7abe9709e0d2d899938153ec3))
+* **customCSS:** swallow expected executeJavaScript rejections ([#2540](https://github.com/IsmaelMartinez/teams-for-linux/issues/2540)) ([86ee1cd](https://github.com/IsmaelMartinez/teams-for-linux/commit/86ee1cd53f4b95aedf28d1ce6d356cf2f3abf956))
+* **deps:** bump transitive mermaid to 11.15.0 (4 medium CVEs) ([#2525](https://github.com/IsmaelMartinez/teams-for-linux/issues/2525)) ([a6e5386](https://github.com/IsmaelMartinez/teams-for-linux/commit/a6e5386204761a31f6274122ca8911527245dd6c))
+* **downloads:** disable QUIC to fix concurrent SharePoint downloads ([#2518](https://github.com/IsmaelMartinez/teams-for-linux/issues/2518)) ([#2520](https://github.com/IsmaelMartinez/teams-for-linux/issues/2520)) ([1e78428](https://github.com/IsmaelMartinez/teams-for-linux/commit/1e78428693be182aaabf5df9bccbcd13e962726d))
+* **multi-account:** rebind screen-share handler per profile session ([#2533](https://github.com/IsmaelMartinez/teams-for-linux/issues/2533)) ([f980dfc](https://github.com/IsmaelMartinez/teams-for-linux/commit/f980dfc27dc744f371c79cb6d78f86845bf09ad9)), closes [#2529](https://github.com/IsmaelMartinez/teams-for-linux/issues/2529)
+* prevent double notification sound and handle dismiss event ([#2411](https://github.com/IsmaelMartinez/teams-for-linux/issues/2411)) ([#2414](https://github.com/IsmaelMartinez/teams-for-linux/issues/2414)) ([50ebefe](https://github.com/IsmaelMartinez/teams-for-linux/commit/50ebefe942cc28e187d953a3c64c183aa77489d1))
+* restore --ozone-platform=x11 default in package.json ([#2511](https://github.com/IsmaelMartinez/teams-for-linux/issues/2511)) ([99111fe](https://github.com/IsmaelMartinez/teams-for-linux/commit/99111fe64b24b8dc8b4f484ac60224cc60fe3839))
+
+
+### Code Improvements
+
+* **dialogs:** use shared createDialogWindow in JoinMeetingDialog ([#2507](https://github.com/IsmaelMartinez/teams-for-linux/issues/2507)) ([065ab86](https://github.com/IsmaelMartinez/teams-for-linux/commit/065ab86aebd015aaf64103019f9a77c971bffbb3))
+
+
+### Documentation
+
+* **claude:** add homepage convention ([#2519](https://github.com/IsmaelMartinez/teams-for-linux/issues/2519)) ([8cb04f7](https://github.com/IsmaelMartinez/teams-for-linux/commit/8cb04f7dd9cf6fe24243331c3284367430de03b7))
+* **notifications,wayland:** GNOME workaround for [#2411](https://github.com/IsmaelMartinez/teams-for-linux/issues/2411), restore ozone x11 default ([#2547](https://github.com/IsmaelMartinez/teams-for-linux/issues/2547)) ([5ea08c8](https://github.com/IsmaelMartinez/teams-for-linux/commit/5ea08c8ca2082ac731e336dc417a1e01e37290bc))
+* **roadmap:** capture 2026-05-07 ozone-platform default reset session ([#2509](https://github.com/IsmaelMartinez/teams-for-linux/issues/2509)) ([e1826ef](https://github.com/IsmaelMartinez/teams-for-linux/commit/e1826ef8b371ac43791e24a5601cab33de42b4fa))
+* **roadmap:** trim to themes, principles, and parked work ([#2539](https://github.com/IsmaelMartinez/teams-for-linux/issues/2539)) ([ca1b894](https://github.com/IsmaelMartinez/teams-for-linux/commit/ca1b894af8e0076a830e733ad7496d5a406b38a0))
+
+
+### CI/CD
+
+* gate packaging jobs on e2e_tests ([#2545](https://github.com/IsmaelMartinez/teams-for-linux/issues/2545)) ([a8e687e](https://github.com/IsmaelMartinez/teams-for-linux/commit/a8e687e969bc7e859303e1d0507213b315761ca5))
+
+
+### Testing
+
+* **preload:** guard modulesRequiringIpc against regression ([#1902](https://github.com/IsmaelMartinez/teams-for-linux/issues/1902)) ([#2546](https://github.com/IsmaelMartinez/teams-for-linux/issues/2546)) ([467e1e4](https://github.com/IsmaelMartinez/teams-for-linux/commit/467e1e45501676826c675b488bf421ce54ea1f41))
+
+
+### Maintenance
+
+* **deps-dev:** bump @playwright/test in the minor-and-patch group ([#2526](https://github.com/IsmaelMartinez/teams-for-linux/issues/2526)) ([475b3f3](https://github.com/IsmaelMartinez/teams-for-linux/commit/475b3f3819715b9b4be672a2be74dbfdd98ead42))
+* **deps:** bump @babel/plugin-transform-modules-systemjs in /docs-site ([#2517](https://github.com/IsmaelMartinez/teams-for-linux/issues/2517)) ([52d49ff](https://github.com/IsmaelMartinez/teams-for-linux/commit/52d49ffc28a07b653f2d3fd751ee984b3789ca7c))
+* **deps:** bump brace-expansion from 5.0.5 to 5.0.6 in /docs-site ([#2553](https://github.com/IsmaelMartinez/teams-for-linux/issues/2553)) ([b429833](https://github.com/IsmaelMartinez/teams-for-linux/commit/b429833c2664d52f9518c14fb476f78e8a5cb41e))
+* **deps:** bump electron from 41.5.0 to 41.6.1 ([#2549](https://github.com/IsmaelMartinez/teams-for-linux/issues/2549)) ([5ab8747](https://github.com/IsmaelMartinez/teams-for-linux/commit/5ab8747601ee470a80b66699db3fcc8203b781ae))
+* **deps:** bump fast-uri from 3.1.0 to 3.1.2 ([#2515](https://github.com/IsmaelMartinez/teams-for-linux/issues/2515)) ([acf4815](https://github.com/IsmaelMartinez/teams-for-linux/commit/acf4815fe4044540f366018f55205555b5d0034f))
+* **deps:** bump fast-uri from 3.1.0 to 3.1.2 in /docs-site ([#2516](https://github.com/IsmaelMartinez/teams-for-linux/issues/2516)) ([69ef30c](https://github.com/IsmaelMartinez/teams-for-linux/commit/69ef30cdae94e53ce1da1d8df61fb22bf84d454f))
+* **deps:** bump ip-address from 10.1.0 to 10.2.0 ([#2504](https://github.com/IsmaelMartinez/teams-for-linux/issues/2504)) ([c036c09](https://github.com/IsmaelMartinez/teams-for-linux/commit/c036c0976190be3e62a5ad44f06de82b2350c59e))
+* **deps:** bump the minor-and-patch group in /docs-site with 2 updates ([#2528](https://github.com/IsmaelMartinez/teams-for-linux/issues/2528)) ([93ae5b7](https://github.com/IsmaelMartinez/teams-for-linux/commit/93ae5b735fbab47dbc053f6d662982ba00c7c463))
+* **deps:** bump the minor-and-patch group with 2 updates ([#2555](https://github.com/IsmaelMartinez/teams-for-linux/issues/2555)) ([f7dc094](https://github.com/IsmaelMartinez/teams-for-linux/commit/f7dc094f8ff39a9483b2b5b749b415b7a6286aa5))
+* **deps:** bump webpack-dev-server from 5.2.3 to 5.2.4 in /docs-site ([#2554](https://github.com/IsmaelMartinez/teams-for-linux/issues/2554)) ([d1ddbb0](https://github.com/IsmaelMartinez/teams-for-linux/commit/d1ddbb03575c917b191f9663d2011a1faa4ab366))
+* **deps:** bump ws from 8.19.0 to 8.20.1 ([#2557](https://github.com/IsmaelMartinez/teams-for-linux/issues/2557)) ([ca9c68a](https://github.com/IsmaelMartinez/teams-for-linux/commit/ca9c68a0de0137f6c7c3602fd28dde8c211706bd))
+* **github:** add pull request template ([#2544](https://github.com/IsmaelMartinez/teams-for-linux/issues/2544)) ([c7f5bb5](https://github.com/IsmaelMartinez/teams-for-linux/commit/c7f5bb5b5837df41502356995359d33b930d88ef))
+* **logging:** demote noisy warns and block MS telemetry beacons ([#2532](https://github.com/IsmaelMartinez/teams-for-linux/issues/2532)) ([84da8c5](https://github.com/IsmaelMartinez/teams-for-linux/commit/84da8c5bf932925fe531f1c2d87480ada4f3fd82))
+
+### Thanks
+
+Big thanks to @app/dependabot, @jayenashar, @jpenberthy for contributing to this release.
+
 ## [2.9.0](https://github.com/IsmaelMartinez/teams-for-linux/compare/v2.8.1...v2.9.0) (2026-05-06)
 
 > **Multi-account is a work-in-progress preview.** The new `multiAccount.enabled` flag (off by default) lets you keep separate Teams sessions in the same window. The Add-profile dialog and the Profiles → Switch-to menu work end-to-end in this release, but the Manage-profiles dialog, the visible top-right switcher pill, and `Ctrl+Shift+1…5` shortcuts are still ahead. Useful to test, but expect rough edges and follow [#2495](https://github.com/IsmaelMartinez/teams-for-linux/issues/2495) for ongoing progress.

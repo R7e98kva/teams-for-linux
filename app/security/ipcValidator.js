@@ -25,8 +25,12 @@ const allowedChannels = new Set([
   'desktop-capturer-get-sources',
   'get-screen-share-screen',
   'get-screen-share-stream',
+  'get-screen-sharing-displays',
   'get-screen-sharing-status',
   'resize-preview-window',
+  // main → renderer only (webContents.postMessage); not gated by this validator,
+  // listed here so the allowlist stays authoritative per CLAUDE.md.
+  'screen-share-port',
   'screen-sharing-started',
   'screen-sharing-stopped',
   'select-source',
@@ -75,6 +79,11 @@ const allowedChannels = new Set([
   
   // Custom backgrounds
   'get-custom-bg-list',
+
+  // Custom stickers
+  'get-sticker-list',
+  'import-sticker-url',
+  'delete-sticker',
   
   // Connection management
   'offline-retry',
