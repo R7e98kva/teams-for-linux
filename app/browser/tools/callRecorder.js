@@ -605,47 +605,63 @@ function patchRTCPeerConnection() {
     return;
   }
 
-  globalThis.RTCPeerConnection = function (...args) {
-    const pc = new OriginalRTCPeerConnection(...args);
-
-    // Capture incoming remote tracks
-    pc.addEventListener('track', (event) => {
-      if (event.track.kind === 'audio' && event.streams.length > 0) {
-        const remoteStream = event.streams[0];
-        connectedSources.push({ stream: remoteStream, node: null, label: 'remote' });
-
-        if (isRecording) {
-          connectStreamToMixer(remoteStream, 'remote');
-        }
-      }
-
-      if (event.track.kind === 'video' && event.streams.length > 0) {
-        addVideoTrack(event.track, 'remote');
-      }
-    });
-
-    // Capture outgoing local video tracks (camera with filters, screen share)
-    // These have Teams background effects already applied.
-    const originalAddTrack = pc.addTrack.bind(pc);
-    pc.addTrack = function (track, ...streams) {
-      if (track.kind === 'video' && shouldRecordVideo()) {
-        addVideoTrack(track, 'local');
-        console.debug(`${LOG_PREFIX} Captured local outgoing video track`);
-      }
-      return originalAddTrack(track, ...streams);
-    };
-
-    return pc;
-  };
-
-  // Copy static properties and prototype
-  globalThis.RTCPeerConnection.prototype = OriginalRTCPeerConnection.prototype;
-  Object.keys(OriginalRTCPeerConnection).forEach(key => {
+  // Attach our capture hooks to a freshly constructed peer connection.
+  // Wrapped in try/catch so a failure in our recording logic can never
+  // break Teams' own call setup.
+  function instrumentPeerConnection(pc) {
     try {
-      globalThis.RTCPeerConnection[key] = OriginalRTCPeerConnection[key];
-    } catch {
-      // Some static properties may not be configurable
+      // Capture incoming remote tracks
+      pc.addEventListener('track', (event) => {
+        try {
+          if (event.track.kind === 'audio' && event.streams.length > 0) {
+            const remoteStream = event.streams[0];
+            connectedSources.push({ stream: remoteStream, node: null, label: 'remote' });
+
+            if (isRecording) {
+              connectStreamToMixer(remoteStream, 'remote');
+            }
+          }
+
+          if (event.track.kind === 'video' && event.streams.length > 0) {
+            addVideoTrack(event.track, 'remote');
+          }
+        } catch (err) {
+          console.debug(`${LOG_PREFIX} track handler failed:`, err.message);
+        }
+      });
+
+      // Capture outgoing local video tracks (camera with filters, screen share)
+      // These have Teams background effects already applied.
+      const originalAddTrack = pc.addTrack.bind(pc);
+      pc.addTrack = function (track, ...streams) {
+        try {
+          if (track?.kind === 'video' && shouldRecordVideo()) {
+            addVideoTrack(track, 'local');
+            console.debug(`${LOG_PREFIX} Captured local outgoing video track`);
+          }
+        } catch (err) {
+          console.debug(`${LOG_PREFIX} addTrack hook failed:`, err.message);
+        }
+        return originalAddTrack(track, ...streams);
+      };
+    } catch (err) {
+      console.debug(`${LOG_PREFIX} Failed to instrument peer connection:`, err.message);
     }
+  }
+
+  // Use a Proxy with a `construct` trap rather than a hand-rolled wrapper
+  // function. The Proxy forwards every other operation (static methods like
+  // RTCPeerConnection.generateCertificate(), `instanceof`, the full prototype
+  // chain, and all non-enumerable properties) to the original constructor
+  // untouched. The previous wrapper only copied enumerable static props via
+  // Object.keys(), which dropped generateCertificate() and broke Teams' call
+  // setup (DTLS certificate generation).
+  globalThis.RTCPeerConnection = new Proxy(OriginalRTCPeerConnection, {
+    construct(target, args, newTarget) {
+      const pc = Reflect.construct(target, args, newTarget);
+      instrumentPeerConnection(pc);
+      return pc;
+    },
   });
 
   console.debug(`${LOG_PREFIX} Patched RTCPeerConnection for remote/local video capture`);
@@ -666,12 +682,18 @@ function patchGetUserMedia() {
   navigator.mediaDevices.getUserMedia = async function (constraints) {
     const stream = await originalGetUserMedia(constraints);
 
-    if (constraints?.audio) {
-      connectedSources.push({ stream, node: null, label: 'local-mic' });
+    // Capture hook must never alter the stream Teams receives or throw — wrap
+    // it so any failure in our recording logic leaves the call unaffected.
+    try {
+      if (constraints?.audio) {
+        connectedSources.push({ stream, node: null, label: 'local-mic' });
 
-      if (isRecording) {
-        connectStreamToMixer(stream, 'local-mic');
+        if (isRecording) {
+          connectStreamToMixer(stream, 'local-mic');
+        }
       }
+    } catch (err) {
+      console.debug(`${LOG_PREFIX} getUserMedia hook failed:`, err.message);
     }
 
     return stream;
