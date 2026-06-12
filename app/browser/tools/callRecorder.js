@@ -358,10 +358,14 @@ function startRecording() {
       scriptProcessor.onaudioprocess = (event) => {
         if (!isRecording) return;
         const inputData = event.inputBuffer.getChannelData(0);
-        // Convert Float32 to Int16 PCM
         const pcm16 = float32ToInt16(inputData);
         if (ipcRendererRef) {
-          ipcRendererRef.send('call-recording-chunk', Array.from(pcm16));
+          // Send raw Int16 bytes as Uint8Array — structured clone transfers
+          // typed arrays efficiently. The old Array.from(pcm16) converted
+          // every sample to a heap-allocated JS number, creating ~1.4 MB/s
+          // of GC pressure that OOM'd the renderer after ~30 minutes.
+          ipcRendererRef.send('call-recording-chunk',
+            new Uint8Array(pcm16.buffer, pcm16.byteOffset, pcm16.byteLength));
         }
       };
 
@@ -504,9 +508,9 @@ function startVideoRecording() {
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0 && ipcRendererRef && isRecording) {
         event.data.arrayBuffer().then(buffer => {
-          // Guard: recorder may have stopped while awaiting arrayBuffer
           if (!isRecording) return;
-          ipcRendererRef.send('call-video-recording-chunk', Array.from(new Uint8Array(buffer)));
+          // Send raw bytes as Uint8Array — same fix as audio path above
+          ipcRendererRef.send('call-video-recording-chunk', new Uint8Array(buffer));
         }).catch(error => {
           console.error(`${LOG_PREFIX} Failed to process video chunk:`, error.message);
         });

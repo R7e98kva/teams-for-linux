@@ -191,7 +191,8 @@ class CallRecordingManager {
     }
 
     try {
-      const buffer = Buffer.from(new Int16Array(pcmData).buffer);
+      // pcmData arrives as a Uint8Array of raw Int16 PCM bytes
+      const buffer = Buffer.from(pcmData.buffer, pcmData.byteOffset, pcmData.byteLength);
       this.#writeStream.write(buffer);
       this.#dataSize += buffer.length;
     } catch (error) {
@@ -245,7 +246,8 @@ class CallRecordingManager {
     }
 
     try {
-      const buffer = Buffer.from(data);
+      // data arrives as a Uint8Array of raw WebM bytes
+      const buffer = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
       this.#videoWriteStream.write(buffer);
     } catch (error) {
       console.error(`${LOG_PREFIX} Failed to write video chunk:`, error.message);
