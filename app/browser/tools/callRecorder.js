@@ -6,8 +6,11 @@
  * to the main process via IPC for WAV file writing.
  *
  * When mode is "video" or "both", captures screen share video tracks only
- * (detected by resolution >=1600px wide). Participant camera feeds are
- * excluded from the recording.
+ * (detected via track.getSettings().width >= 1600px). Tracks are classified
+ * by a cheap 1s polling loop; a decoding <video> element is only attached
+ * for actual screen shares while recording is active. Participant camera
+ * feeds are never decoded — software-decoding every camera (GPU is disabled
+ * by default on Wayland) froze the renderer at join time.
  *
  * Activated automatically when a call connects if callRecording.enabled is true.
  */
@@ -29,13 +32,18 @@ let sampleRate = 44100;
 // Video compositing state
 const CANVAS_WIDTH = 1280;
 const CANVAS_HEIGHT = 720;
-const RENDER_INTERVAL_MS = 33; // ~30fps
+// ~10fps — screen shares are mostly static content; keeps software
+// rasterization cheap when GPU is disabled (default on Wayland)
+const RENDER_INTERVAL_MS = 100;
+// Track classification poll — getSettings() is cheap, no decoding involved
+const CLASSIFY_INTERVAL_MS = 1000;
 
 let mediaRecorder = null;
-let videoTracks = new Map(); // index -> { track, videoElement, source }
+let videoTracks = new Map(); // index -> { track, videoElement|null, source }
 let compositeCanvas = null;
 let compositeCtx = null;
 let renderIntervalId = null;
+let classifyIntervalId = null;
 let canvasStream = null;
 let combinedStream = null;
 let nextTrackIndex = 0;
@@ -111,59 +119,130 @@ function removeVideoElement(videoElement) {
 }
 
 /**
- * Add a video track for compositing.
+ * Register a video track for screen-share classification.
+ *
+ * No decoding happens here — the track is only stored. The classify loop
+ * decides (via track.getSettings().width) whether it is a screen share
+ * worth attaching a decoding video element to.
+ *
  * @param {MediaStreamTrack} track
- * @param {string} source - "remote", "local-camera", or "local-screenshare"
+ * @param {string} source - "remote" or "local"
  */
 function addVideoTrack(track, source) {
+  if (!shouldRecordVideo()) return;
+
   // Avoid duplicates
   for (const [, entry] of videoTracks) {
     if (entry.track === track) return;
   }
 
-  // Cancel any pending stop — new track arrived during transition
-  if (stopVideoDebounceTimer) {
-    clearTimeout(stopVideoDebounceTimer);
-    stopVideoDebounceTimer = null;
-  }
-
   const index = nextTrackIndex++;
-  const videoElement = createVideoElement(track);
-  videoTracks.set(index, { track, videoElement, source });
+  videoTracks.set(index, { track, videoElement: null, source });
 
   track.addEventListener('ended', () => {
     removeVideoTrack(index);
   });
 
-  console.debug(`${LOG_PREFIX} Added ${source} video track (total: ${videoTracks.size})`);
+  console.debug(`${LOG_PREFIX} Registered ${source} video track (total: ${videoTracks.size})`);
 
-  // If recording is active but video recording hasn't started yet, start it
-  if (isRecording && shouldRecordVideo() && !mediaRecorder) {
-    startVideoRecording();
+  if (isRecording) {
+    classifyTracks();
   }
 }
 
 /**
- * Remove a video track and clean up its video element.
+ * Remove a video track and clean up its video element (if it had one).
+ * Recorder stop is handled by the classify loop's share-count debounce.
  */
 function removeVideoTrack(index) {
   const entry = videoTracks.get(index);
   if (!entry) return;
 
-  removeVideoElement(entry.videoElement);
+  if (entry.videoElement) {
+    removeVideoElement(entry.videoElement);
+    entry.videoElement = null;
+  }
   videoTracks.delete(index);
 
   console.debug(`${LOG_PREFIX} Removed video track (total: ${videoTracks.size})`);
+}
 
-  // Debounce stop: during PiP/view transitions, tracks are rapidly removed
-  // and re-added. Wait before stopping to avoid thrashing MediaRecorder.
-  if (videoTracks.size === 0 && mediaRecorder) {
+/**
+ * Count tracks currently classified as screen shares (i.e. with a decoder).
+ */
+function countActiveShares() {
+  let count = 0;
+  for (const entry of videoTracks.values()) {
+    if (entry.videoElement) count++;
+  }
+  return count;
+}
+
+/**
+ * Classify registered tracks as screen share vs camera using
+ * track.getSettings() — no decoding needed. Attach a decoding video
+ * element only to screen shares, detach from anything else, and drive
+ * the MediaRecorder lifecycle from the share count.
+ */
+function classifyTracks() {
+  if (!isRecording) return;
+
+  for (const entry of videoTracks.values()) {
+    let width = 0;
+    try {
+      width = entry.track.getSettings?.().width || 0;
+    } catch {
+      // Track may be in the middle of ending
+    }
+    const isShare = width >= SCREEN_SHARE_MIN_WIDTH && entry.track.readyState === 'live';
+
+    if (isShare && !entry.videoElement) {
+      entry.videoElement = createVideoElement(entry.track);
+      console.debug(`${LOG_PREFIX} Screen share detected, decoding enabled`);
+    } else if (!isShare && entry.videoElement) {
+      removeVideoElement(entry.videoElement);
+      entry.videoElement = null;
+    }
+  }
+
+  const shares = countActiveShares();
+  if (shares > 0) {
+    // Cancel any pending stop — a share is (still or again) active
+    if (stopVideoDebounceTimer) {
+      clearTimeout(stopVideoDebounceTimer);
+      stopVideoDebounceTimer = null;
+    }
+    if (!mediaRecorder) {
+      startVideoRecording();
+    }
+  } else if (mediaRecorder && !stopVideoDebounceTimer) {
+    // Debounce stop: during PiP/view transitions, share tracks are rapidly
+    // removed and re-added. Wait before stopping to avoid thrashing
+    // MediaRecorder. 5s covers churn plus classify-loop latency.
     stopVideoDebounceTimer = setTimeout(() => {
       stopVideoDebounceTimer = null;
-      if (videoTracks.size === 0 && mediaRecorder) {
+      if (countActiveShares() === 0 && mediaRecorder) {
         stopVideoRecording();
       }
-    }, 2000);
+    }, 5000);
+  }
+}
+
+/**
+ * Start the periodic track classification loop.
+ */
+function startClassifyLoop() {
+  if (classifyIntervalId !== null) return;
+  classifyIntervalId = setInterval(classifyTracks, CLASSIFY_INTERVAL_MS);
+}
+
+/**
+ * Stop the track classification loop.
+ */
+function stopClassifyLoop() {
+  if (classifyIntervalId !== null) {
+    clearInterval(classifyIntervalId);
+    classifyIntervalId = null;
   }
 }
 
@@ -243,10 +322,10 @@ function renderFrame() {
   compositeCtx.fillStyle = '#000000';
   compositeCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-  // Only render screen shares — skip camera feeds
+  // Only render screen shares — only they have decoding video elements
   const screenShares = [];
   for (const entry of videoTracks.values()) {
-    if (isScreenShare(entry.videoElement)) {
+    if (entry.videoElement && isScreenShare(entry.videoElement)) {
       screenShares.push(entry.videoElement);
     }
   }
@@ -353,7 +432,13 @@ function startRecording() {
         source.connect(scriptProcessor);
       });
 
-      scriptProcessor.connect(audioContext.destination);
+      // ScriptProcessor must reach the destination to keep firing, but the
+      // recorded mix must not be audible (it duplicates remote audio and
+      // feeds the mic back — echo). Route through a zero-gain node.
+      const silentGain = audioContext.createGain();
+      silentGain.gain.value = 0;
+      scriptProcessor.connect(silentGain);
+      silentGain.connect(audioContext.destination);
 
       scriptProcessor.onaudioprocess = (event) => {
         if (!isRecording) return;
@@ -382,9 +467,11 @@ function startRecording() {
       connectStreamToMixer(src.stream, src.label);
     }
 
-    // Start video recording if any video sources are already available
-    if (shouldRecordVideo() && videoTracks.size > 0) {
-      startVideoRecording();
+    // Classify already-registered video tracks and keep watching for
+    // screen shares; recording starts when one is detected
+    if (shouldRecordVideo()) {
+      startClassifyLoop();
+      classifyTracks();
     }
 
     console.info(`${LOG_PREFIX} Recording started (mode: ${config?.callRecording?.mode || 'audio'})`);
@@ -405,7 +492,8 @@ function stopRecording() {
   isRecording = false;
 
   try {
-    // Cancel any pending debounced stop
+    // Stop track classification and any pending debounced stop
+    stopClassifyLoop();
     if (stopVideoDebounceTimer) {
       clearTimeout(stopVideoDebounceTimer);
       stopVideoDebounceTimer = null;
@@ -414,9 +502,11 @@ function stopRecording() {
     // Stop video recording first
     stopVideoRecording();
 
-    // Clean up all video tracks and their video elements
+    // Clean up all video tracks and their decoding elements
     for (const [, entry] of videoTracks) {
-      removeVideoElement(entry.videoElement);
+      if (entry.videoElement) {
+        removeVideoElement(entry.videoElement);
+      }
     }
     videoTracks.clear();
     nextTrackIndex = 0;
@@ -469,8 +559,8 @@ function startVideoRecording() {
     console.debug(`${LOG_PREFIX} Video recording already active`);
     return;
   }
-  if (videoTracks.size === 0) {
-    console.debug(`${LOG_PREFIX} No active video sources available`);
+  if (countActiveShares() === 0) {
+    console.debug(`${LOG_PREFIX} No active screen share available`);
     return;
   }
 
@@ -478,8 +568,8 @@ function startVideoRecording() {
     // Start the canvas rendering loop
     startRenderLoop();
 
-    // Capture the canvas as a video stream at 30fps
-    canvasStream = compositeCanvas.captureStream(30);
+    // Capture the canvas as a video stream (matches the 10fps render loop)
+    canvasStream = compositeCanvas.captureStream(10);
 
     // Build combined stream: canvas video + mixed audio
     const tracks = [...canvasStream.getVideoTracks()];
@@ -532,7 +622,7 @@ function startVideoRecording() {
       ipcRendererRef.send('call-video-recording-start', { mimeType });
     }
 
-    console.info(`${LOG_PREFIX} Video recording started (${videoTracks.size} sources)`);
+    console.info(`${LOG_PREFIX} Video recording started (${countActiveShares()} screen shares)`);
   } catch (error) {
     console.error(`${LOG_PREFIX} Failed to start video recording:`, error.message);
     stopRenderLoop();
@@ -598,9 +688,9 @@ function connectStreamToMixer(stream, label) {
 /**
  * Patch RTCPeerConnection to intercept remote and local video tracks.
  *
- * All video tracks are captured so their resolution can be checked at render
- * time. Only screen shares (>=1600px) are actually rendered; camera feeds
- * are ignored during compositing.
+ * Tracks are only registered here (no decoding). The classify loop checks
+ * their resolution via getSettings() and attaches a decoder only to actual
+ * screen shares (>=1600px) while recording.
  */
 function patchRTCPeerConnection() {
   const OriginalRTCPeerConnection = globalThis.RTCPeerConnection;

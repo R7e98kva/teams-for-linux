@@ -161,6 +161,15 @@ function sanitizePayload(obj, depth = 0) {
     return;
   }
 
+  // Binary payloads (typed arrays, ArrayBuffers, Node Buffers) cannot carry
+  // prototype-pollution keys, and Object.keys() on a large typed array
+  // allocates one string per element — the call recording channels send
+  // multi-KB chunks many times per second, which made this walk a main
+  // process hotspot.
+  if (ArrayBuffer.isView(obj) || obj instanceof ArrayBuffer) {
+    return;
+  }
+
   for (const prop of DANGEROUS_PROPS) {
     if (Object.hasOwn(obj, prop)) {
       delete obj[prop];
