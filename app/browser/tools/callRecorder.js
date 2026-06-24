@@ -462,8 +462,12 @@ function startRecording() {
     isRecording = true;
     callStartTime = new Date();
 
-    // Connect any already-captured streams
-    for (const src of connectedSources) {
+    // Connect streams that arrived before recording started. splice(0)
+    // empties the array before iterating so connectStreamToMixer's push
+    // doesn't grow the same array — that caused an infinite loop on the
+    // second call (tracks arrived before call-connected).
+    const pendingSources = connectedSources.splice(0);
+    for (const src of pendingSources) {
       connectStreamToMixer(src.stream, src.label);
     }
 
@@ -509,7 +513,6 @@ function stopRecording() {
       }
     }
     videoTracks.clear();
-    nextTrackIndex = 0;
 
     if (scriptProcessor) {
       scriptProcessor.disconnect();
@@ -674,6 +677,9 @@ function connectStreamToMixer(stream, label) {
   try {
     const audioTracks = stream.getAudioTracks();
     if (audioTracks.length === 0) return;
+    // Skip streams whose tracks have all ended (e.g. leftovers from a
+    // previous call that were queued before stopRecording ran)
+    if (audioTracks.every(t => t.readyState !== 'live')) return;
 
     const source = audioContext.createMediaStreamSource(stream);
     source.connect(mixedDestination);
@@ -709,10 +715,10 @@ function patchRTCPeerConnection() {
         try {
           if (event.track.kind === 'audio' && event.streams.length > 0) {
             const remoteStream = event.streams[0];
-            connectedSources.push({ stream: remoteStream, node: null, label: 'remote' });
-
             if (isRecording) {
               connectStreamToMixer(remoteStream, 'remote');
+            } else {
+              connectedSources.push({ stream: remoteStream, node: null, label: 'remote' });
             }
           }
 
@@ -780,10 +786,10 @@ function patchGetUserMedia() {
     // it so any failure in our recording logic leaves the call unaffected.
     try {
       if (constraints?.audio) {
-        connectedSources.push({ stream, node: null, label: 'local-mic' });
-
         if (isRecording) {
           connectStreamToMixer(stream, 'local-mic');
+        } else {
+          connectedSources.push({ stream, node: null, label: 'local-mic' });
         }
       }
     } catch (err) {
